@@ -290,7 +290,8 @@ def show_exam(mid, review):
                 crit = next((r["criterion"] for r in task["rubric"] if r["id"] == g["id"]), g["id"])
                 with st.container(horizontal=True, vertical_alignment="center"):
                     st.markdown(f"{VERDICT_ICON[g['verdict']]} **{g['id']}. {crit}**: {VERDICT_TEXT[g['verdict']]}"
-                                f"  \n{g['reason']}" + (f"  \n_Evidence: {g['evidence']}_" if g.get("evidence") else "")
+                                f"  \n{g['reason']}" + (" _(value checked by the app)_" if g.get("checked_by") == "app" else "")
+                                + (f"  \n_Evidence: {g['evidence']}_" if g.get("evidence") else "")
                                 + (f"  \n:orange[Send: {g['need']}]" if g["verdict"] == "cant_tell" and g.get("need") else "")
                                 + (f"  \n:blue[Overridden by you: {g['override']['reason']}]" if g.get("override") else ""))
                     if g["verdict"] != "pass" and gs["task_status"] != "passed":
@@ -308,7 +309,9 @@ def show_exam(mid, review):
                 text = st.text_area("Your answer / notes" if task["screenshots"] else "Your answer",
                                     height=200 if task["proof_type"] != "file" else 100)
                 files = st.file_uploader(f"Images: screenshots or photos of your working (up to {config.IMAGE_MAX_COUNT})",
-                                         type=["png", "jpg", "jpeg"],
+                                         type=["png", "jpg", "jpeg", "heic", "heif"],
+                                         help="Phone photos are fine (iPhone HEIC too); they are turned "
+                                              "upright automatically. One photo per page of working.",
                                          accept_multiple_files=True)
                 if st.form_submit_button(f"Submit for grading (~{usd(cost)})", type="primary"):
                     with st.spinner("Grader is checking each rubric item..."):

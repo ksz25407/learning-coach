@@ -411,8 +411,9 @@ class Coach:
             "examiner_task": with_sources("examiner_task", lesson + 2000, out["examiner_task"]),
             "examiner_task_solved": with_sources("examiner_task_solved", lesson + 2000, out["examiner_task_solved"]),
             "task_solver": with_sources("task_solver", lesson + 2000, out["task_solver"]),
-            # a few full-size screenshots (~4,800 tokens each at the 2,576 px limit)
-            "grader": cost("grader", config.EST_GRADER_INPUT_TOKENS + 3 * 4800, out["grader"]),
+            # a few full-size images (screenshots or photos of working)
+            "grader": cost("grader", config.EST_GRADER_INPUT_TOKENS + config.EST_GRADER_IMAGES * config.EST_IMAGE_TOKENS,
+                           out["grader"]),
         }
 
     def estimate_new_quiz_cost(self, profile_id: int) -> tuple[float, float]:

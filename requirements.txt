@@ -8,3 +8,5 @@ trafilatura==2.3.1
 pypdf==6.21.4
 fsrs==6.3.2
 tzdata==2026.6
+pillow==13.0.0
+pillow-heif==1.8.1

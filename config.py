@@ -186,7 +186,11 @@ IMAGE_MAX_COUNT = 6
 REVIEW_DAILY_LIMIT = 15
 
 # Rough output tokens per grader call, for the cost shown on the submit button.
-EST_GRADER_INPUT_TOKENS = 6000  # task + rubric + your text + a few screenshots
+EST_GRADER_INPUT_TOKENS = 6000  # task + rubric + your text
+# Phase 5: one full-size image: a 4:3 photo at the 2,576 px limit is (2576/28) x (1932/28) =
+# 92 x 69 = about 6,350 tokens. The grader estimate assumes EST_GRADER_IMAGES of them.
+EST_IMAGE_TOKENS = 6400
+EST_GRADER_IMAGES = 3
 EST_OUTPUT_TOKENS["grader"] = 2000
 EST_OUTPUT_TOKENS["examiner_task"] = 2000
 

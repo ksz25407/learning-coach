@@ -37,7 +37,7 @@ def test_prompt_names_no_specific_product(name):
 def test_task_and_grader_prompts_cover_photos_of_working():
     assert "handwritten" in examiner.TASK_SYSTEM
     assert "photo of the second page of working" in grader.SYSTEM  # a photo example, not only screenshots
-    assert "last line of the working" in grader.SYSTEM
+    assert "Handwritten working" in grader.SYSTEM and "Never guess what illegible writing says" in grader.SYSTEM
 
 
 def test_scoper_asks_for_course_conventions():

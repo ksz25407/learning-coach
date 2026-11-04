@@ -88,7 +88,7 @@ def test_grader_prompt_states_the_evidence_rule():
 
 def test_grader_missing_items_are_cant_tell_and_extra_ids_ignored(llm, fake):
     reply = grading("pass")  # only r1
-    reply.grades.append(grader.ItemGrade(id="r9", verdict="fail", evidence="x", reason="?", need=""))
+    reply.grades.append(grader.ItemGrade(id="r9", verdict="fail", evidence="x", reason="?", need="", learner_value=""))
     fake.messages.by_agent["grader"] = [reply]
     grades = grader.grade_task(llm, PROFILE, MILESTONE, TASK, "done", [])
     assert [(g["id"], g["verdict"]) for g in grades] == [("r1", "pass"), ("r2", "cant_tell"), ("r3", "cant_tell")]

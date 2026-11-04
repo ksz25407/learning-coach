@@ -142,7 +142,8 @@ def grading(*verdicts, evidence="Screenshot 1: dimension 4200 between grids A an
     """A Grader reply: one verdict per rubric item r1, r2, ..."""
     from agents.grader import Grading, ItemGrade
     return Grading(grades=[ItemGrade(id=f"r{i}", verdict=v, evidence=evidence if v != "cant_tell" else "",
-                                     reason="because", need="a closer screenshot" if v == "cant_tell" else "")
+                                     reason="because", need="a closer screenshot" if v == "cant_tell" else "",
+                                     learner_value="")
                            for i, v in enumerate(verdicts, 1)])
 
 

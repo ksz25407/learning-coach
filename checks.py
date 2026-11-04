@@ -377,6 +377,42 @@ def apply_evidence_rule(grades: list[dict]) -> list[dict]:
     return out
 
 
+def apply_value_rule(grades: list[dict], rubric: list[dict]) -> list[dict]:
+    """Final-value items are decided by Python, like quiz answers: the Grader only reads your
+    final value off the page (learner_value), and the tolerance check is done here.
+    - value read and parsable: pass if within the allowed error, else fail;
+    - value written but not a number with a readable unit: cant_tell, asking you to write it clearly;
+    - no value read: the Grader's verdict stays, except that a "pass" becomes cant_tell.
+    The reason never states the correct value (you may resubmit). Marked checked_by="app"."""
+    items = {r["id"]: r for r in rubric}
+    out = []
+    for g in grades:
+        r = items.get(g["id"])
+        if not r or r.get("kind") != "value":
+            out.append(g)
+            continue
+        g = dict(g)
+        written = (g.get("learner_value") or "").strip()
+        tol = r.get("tolerance_pct") or config.TASK_DEFAULT_TOLERANCE_PCT
+        key = f"{r['value']} {r['unit']}".strip()
+        if written and parse_quantity(written, r["unit"]) is not None:
+            ok = numbers_match(key, written, r["unit"], tol)
+            g.update(verdict="pass" if ok else "fail", checked_by="app", need="",
+                     evidence=g.get("evidence") or f"final value written: {written}",
+                     reason=(f"Your final value ({written}) is within the allowed {tol:g}%." if ok else
+                             f"Your final value ({written}) is not within {tol:g}% of the correct value."))
+        elif written:
+            g.update(verdict="cant_tell", checked_by="app",
+                     reason=f"Couldn't read '{written}' as a number with a unit.",
+                     need=f"Write your final value of {r['quantity']} clearly as a number and unit (e.g. 6.4 V).")
+        elif g["verdict"] == "pass":
+            g.update(verdict="cant_tell", checked_by="app",
+                     reason="The grader found no final value for this quantity.",
+                     need=f"State your final value of {r['quantity']} clearly, with its unit.")
+        out.append(g)
+    return out
+
+
 def effective_grades(grades: list[dict], overrides: list[dict]) -> list[dict]:
     """The grader's verdicts with your overrides applied (the newest override per item wins)."""
     latest = {}
