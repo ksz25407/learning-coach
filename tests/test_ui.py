@@ -70,8 +70,8 @@ def test_lesson_view_shows_sources(tmp_path, monkeypatch):
     assert "Walls guide" in page and "Over 30 min" in page
     assert "pages 3, 7" in page and "HTTP 404" in page
     assert any("Not checked yet" in w.value for w in at.warning)
-    assert any(b.label.startswith("Regenerate with current sources (~$") for b in at.button)
-    assert any(b.label.startswith("Run checks (~$") for b in at.button)
+    assert any(b.label.startswith("Regenerate with current sources (~\\$") for b in at.button)
+    assert any(b.label.startswith("Run checks (~\\$") for b in at.button)
     assert any("Outdated" in str(e.proto) for e in at.get("badge")) or "Outdated" in page
 
 
@@ -110,6 +110,6 @@ def test_flagged_lesson_shows_problems_and_quiz(tmp_path, monkeypatch):
     page = " ".join(m.value for m in at.markdown)
     # Phase 4: a quiz from before the exam existed must be prepared first (concept tags + task).
     assert "Which tool draws walls?" not in page
-    assert any(b.label.startswith("Prepare exam (~$") for b in at.button)
-    assert "Odd one?" in page and "Solver: Floor" in page
+    assert any(b.label.startswith("Prepare exam (~\\$") for b in at.button)
+    assert "Odd one?" in page and any("Solver: Floor" in c.value for c in at.caption)
     assert any("Only 1 question(s) survived" in w.value for w in at.warning)

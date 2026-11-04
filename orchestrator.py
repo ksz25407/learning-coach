@@ -14,7 +14,8 @@ import checks
 import clock
 import config
 import review
-from agents import curator, examiner, fact_checker, grader, pedagogy, planner, quiz_solver, scoper, teacher
+from agents import (curator, examiner, fact_checker, formatting, grader, pedagogy, planner, quiz_solver,
+                    scoper, teacher)
 from agents.planner import PlanningFailed  # noqa: F401  (re-exported for the UI)
 from db import store
 from llm import BudgetExceeded, LLMError, RefusalError, price_for
@@ -28,7 +29,8 @@ milestone plan. Answer their questions briefly and concretely, at their level. I
 belongs to a later milestone, say so and give a short answer. Lessons cite web pages and the
 learner's uploaded PDFs and are checked by a Fact-checker, but your chat answers come from
 your own knowledge and are NOT checked, so flag anything you are unsure about.
-"""
+
+""" + formatting.ALL
 
 CHECK_ERRORS = (BudgetExceeded, RefusalError, LLMError)  # stop the checks, keep the lesson
 
@@ -216,8 +218,8 @@ class Coach:
                 save()
 
     def _run_checkers(self, profile, milestone, lesson, pid) -> list[dict]:
-        """Fact-checker and Pedagogy reviewer, in parallel. Returns both checkers' flags,
-        with unquoted flags downgraded to minor."""
+        """Fact-checker and Pedagogy reviewer, in parallel, plus the netlist check (Python).
+        Returns all flags, with unquoted checker flags downgraded to minor."""
         reading = checks.reading_minutes(lesson.text)
         budget = checks.length_budget(milestone.get("est_hours"))
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -226,7 +228,7 @@ class Coach:
             ped = pool.submit(pedagogy.review, self.llm, profile, milestone,
                               checks.plain_lesson(lesson.text), reading, budget, pid)
             flags = fact.result() + ped.result()
-        return checks.apply_quote_rule(flags, lesson.text)
+        return checks.apply_quote_rule(flags, lesson.text) + checks.block_flags(lesson.text)
 
     def _check_and_revise(self, profile, milestone, lesson, pid):
         """Check; on any major flag the Teacher rewrites with the same sources, at most
@@ -271,7 +273,18 @@ class Coach:
             for q in questions:
                 q["id"] = f"q{next_id}"
                 next_id += 1
-            answers = quiz_solver.solve(self.llm, profile, plain, questions, profile_id=pid)
+            # Questions with a broken netlist are dropped before the solver sees them.
+            ok = []
+            for q in questions:
+                problems = [b["problem"] for b in checks.block_problems(q["question"])]
+                if not problems:
+                    ok.append(q)
+                    continue
+                reason = "invalid netlist: " + "; ".join(problems)
+                dropped.append({**q, "solver_answer": None, "solver_note": "", "reason": reason, "draft": draft})
+                avoid.append({"question": q["question"], "problem": reason})
+            questions = ok
+            answers = quiz_solver.solve(self.llm, profile, plain, questions, profile_id=pid) if questions else {}
             for q in questions:
                 got = answers.get(q["id"])
                 if got is not None and checks.answers_match(q, got["answer"]):
@@ -390,8 +403,18 @@ class Coach:
         return dict(m), store.get_lesson(self.conn, milestone_id), store.get_profile_data(self.conn, m["profile_id"])
 
     def _make_task(self, milestone_id, profile, milestone, lesson_text):
-        task = examiner.draft_task(self.llm, profile, milestone, checks.plain_lesson(lesson_text),
-                                   profile_id=milestone["profile_id"])
+        """Draft the task. A broken netlist gets one redraft; if it's still broken, the task is
+        saved with the problems shown at the top so you (and the Grader) know."""
+        plain = checks.plain_lesson(lesson_text)
+        task = examiner.draft_task(self.llm, profile, milestone, plain, profile_id=milestone["profile_id"])
+        problems = [b["problem"] for b in checks.block_problems(task["instructions"])]
+        if problems:
+            task = examiner.draft_task(self.llm, profile, milestone, plain, profile_id=milestone["profile_id"],
+                                       problems=problems)
+            problems = [b["problem"] for b in checks.block_problems(task["instructions"])]
+        if problems:
+            task["instructions"] = ("**Warning:** the app's netlist check found problems in this task, so "
+                                    "the circuit may be wrong: " + "; ".join(problems) + "\n\n" + task["instructions"])
         store.save_task(self.conn, milestone_id, task["proof_type"], task["instructions"],
                         task["rubric"], task["screenshots"])
 

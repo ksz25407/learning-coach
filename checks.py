@@ -4,11 +4,13 @@
 - reading time and the length budget for the Pedagogy reviewer
 - comparing the Quiz solver's answers with the Examiner's answer key
 - the lesson status shown in the UI
+- checking fenced code blocks (e.g. ```spice netlists) in anything an agent writes
 """
 import re
 import unicodedata
 
 import config
+import netlist
 
 # ---------- text normalisation ----------
 
@@ -20,12 +22,13 @@ QUOTE_CHARS = {"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—"
 
 
 def norm_text(s: str) -> str:
-    """Lower-case, drop citation markers [1] and Markdown emphasis, collapse spaces."""
+    """Lower-case, drop citation markers [1], Markdown emphasis and LaTeX $ delimiters,
+    collapse spaces. (So a checker quoting 'V = IR' matches the lesson's '$V = IR$'.)"""
     s = unicodedata.normalize("NFKC", s or "")
     for a, b in QUOTE_CHARS.items():
         s = s.replace(a, b)
     s = CITATION_MARK.sub("", s)
-    s = re.sub(r"[*_`]", "", s)
+    s = re.sub(r"[*_`$]", "", s)
     return " ".join(s.lower().split())
 
 
@@ -66,14 +69,54 @@ def apply_quote_rule(flags: list[dict], lesson_text: str) -> list[dict]:
     return out
 
 
+CHECKER_NAMES = {"fact": "Fact-checker", "pedagogy": "Pedagogy reviewer", "block": "Netlist check"}
+
+
+def checker_name(flag: dict) -> str:
+    return CHECKER_NAMES.get(flag["checker"], flag["checker"])
+
+
 def feedback_text(flags: list[dict]) -> str:
     """The major flags, written out for the Teacher's revision."""
     lines = []
     for i, f in enumerate(flags, 1):
-        who = "Fact-checker" if f["checker"] == "fact" else "Pedagogy reviewer"
+        who = checker_name(f)
         lines.append(f"{i}. ({who}) Lesson text: \"{f['quote']}\"\n   Problem: {f['problem']}\n"
                      f"   Evidence: {f['evidence']}")
     return "\n".join(lines)
+
+
+# ---------- fenced code blocks (netlists) ----------
+
+# One checker per code-block tag. It gets the block's text and returns a list of problems.
+# Add a tag here to check another notation; a later phase can add a simulator check too.
+BLOCK_CHECKERS = {"spice": netlist.check}
+FENCED_BLOCK = re.compile(r"^[ \t]*```[ \t]*([\w+-]*)[ \t]*\n(.*?)^[ \t]*```", re.MULTILINE | re.DOTALL)
+
+
+def block_problems(text: str) -> list[dict]:
+    """Problems in checked code blocks: [{"tag", "block" (its text), "problem"}]."""
+    out = []
+    for m in FENCED_BLOCK.finditer(text or ""):
+        check = BLOCK_CHECKERS.get(m.group(1).lower())
+        if check:
+            out += [{"tag": m.group(1).lower(), "block": m.group(2), "problem": p} for p in check(m.group(2))]
+    return out
+
+
+def block_flags(lesson_text: str) -> list[dict]:
+    """Netlist problems in a lesson, as major flags in the shared flag shape (see orchestrator).
+    The quote is the offending line, so the Teacher knows where to look."""
+    flags = []
+    for b in block_problems(lesson_body(lesson_text)):
+        m = re.match(r"line (\d+):", b["problem"])
+        lines = b["block"].splitlines() or [""]
+        n = int(m.group(1)) if m else 1
+        quote = lines[min(n, len(lines)) - 1].strip()
+        flags.append({"checker": "block", "quote": quote, "problem": f"{b['tag']} netlist: {b['problem']}",
+                      "evidence": "Found by the app's netlist check (Python), not by a model.",
+                      "kind": "netlist", "severity": "major", "quote_found": True})
+    return flags
 
 
 # ---------- length ----------

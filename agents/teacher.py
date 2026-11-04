@@ -8,6 +8,7 @@ cites. The model's own [Source: ...] tags are not trusted.
 import re
 from dataclasses import dataclass, field
 
+from agents import formatting
 from checks import SOURCES_LIST
 from sources.base import PRIORITY, ModelKnowledgeSource, SourceChunk, gather
 
@@ -36,11 +37,32 @@ Be concrete and brief. Teach only what the objective needs.
 Revisions: if the request includes a PREVIOUS DRAFT and REVIEWER FEEDBACK, rewrite the lesson so
 every feedback point is fixed, using the same documents. Keep everything that was not criticised.
 If a point says a claim is wrong or unsupported, correct it from the documents or remove it.
-"""
+
+""" + formatting.ALL
 
 SOURCE_TAG = re.compile(r"^\s*\[Source:[^\]]*\]\s*$", re.IGNORECASE)
 MARK = "⟦{}⟧"  # temporary citation marker, replaced by [n] at the end
 MARK_RE = re.compile("⟦(\\d+)⟧")
+
+# Parts of the lesson a citation marker must not land inside: code blocks (netlists), inline
+# code, displayed maths $$...$$ and inline maths $...$ (a \$ is a dollar sign, not maths).
+PROTECTED = re.compile(r"(?P<block>```.*?```|\$\$.*?\$\$)"
+                       r"|`[^`\n]*`|(?<!\\)\$(?:\\.|[^$\\\n])+\$", re.DOTALL)
+
+
+def move_marks_out(text: str) -> str:
+    """Move citation markers that fell inside maths or code to just after it. A marker
+    after a code block or $$...$$ goes on the next line: '```[1]' would no longer close
+    the block, and '$$' must stay on its own line."""
+    def fix(m):
+        span = m.group(0)
+        marks = MARK_RE.findall(span)
+        if not marks:
+            return span
+        sep = "\n" if m.group("block") else ""
+        return MARK_RE.sub("", span) + sep + "".join(MARK.format(n) for n in marks)
+
+    return PROTECTED.sub(fix, text)
 
 
 @dataclass
@@ -146,6 +168,7 @@ def write_lesson(llm, profile: dict, milestone: dict, sources=None, profile_id=N
                                  profile=profile, profile_id=profile_id)
 
     text, citations = render(blocks, chunks)
+    text = move_marks_out(text)
     text = label_sections(text, citations)
     text = MARK_RE.sub(lambda m: f"[{m.group(1)}]", text) + sources_list(citations)
 

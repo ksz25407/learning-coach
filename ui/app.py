@@ -9,6 +9,7 @@ import re
 import anthropic
 import streamlit as st
 
+import checks
 import clock
 import config
 from agents.curator import is_long
@@ -40,8 +41,14 @@ def show_chat(profile_id, stage=None):
             st.markdown(row["content"])
 
 
+def usd(x: float, digits: int = 2) -> str:
+    """A dollar amount for Markdown text and labels. Written as '\\$' so Streamlit doesn't read
+    two amounts in one label ('~$0.12, max $0.30') as a LaTeX formula."""
+    return f"\\${x:.{digits}f}"
+
+
 def flag_line(f) -> str:
-    who = "Fact-checker" if f["checker"] == "fact" else "Pedagogy reviewer"
+    who = checks.checker_name(f)
     return f"**{who}** ({f['kind']}): “{f['quote']}”  \n{f['problem']}  \n_Evidence: {f['evidence']}_"
 
 
@@ -127,8 +134,11 @@ def show_missed(missed: list[dict]):
         if x.get("choices"):
             i = ord(x["answer"].strip().upper()[:1] or "A") - 65
             right = f"{x['answer']}. {x['choices'][i]}" if 0 <= i < len(x["choices"]) else x["answer"]
-        st.markdown(f"- **{x['question']}**  \n  Your answer: {x['given'] or '(blank)'} · "
-                    f"Correct: **{right}{unit}**  \n  {x['explanation']}  \n  Read again: {section_link(x['section'])}")
+        # The question may hold a netlist code block, so it gets its own Markdown call
+        # (a code block can't sit inside bold text or a list item).
+        st.markdown(f"**Missed:** {x['question']}")
+        st.markdown(f"Your answer: {x['given'] or '(blank)'} · Correct: **{right}{unit}**  \n"
+                    f"{x['explanation']}  \nRead again: {section_link(x['section'])}")
 
 
 VERDICT_ICON = {"pass": ":material/check_circle:", "fail": ":material/cancel:", "cant_tell": ":material/help:"}
@@ -141,8 +151,9 @@ def show_dropped(quiz):
     if quiz and quiz["dropped"]:
         with st.expander(f"Dropped questions ({len(quiz['dropped'])})"):
             for q in quiz["dropped"]:
-                st.markdown(f"- {q['question']}  \n  Key: {q['answer']} · Solver: {q['solver_answer']} "
-                            f"· {q['reason']}. {q['solver_note']}")
+                st.markdown(q["question"])
+                solver = f" · Solver: {q['solver_answer']}" if q.get("solver_answer") is not None else ""
+                st.caption(f"Key: {q['answer']}{solver} · {q['reason']}. {q['solver_note']}")
 
 
 def show_history(mid):
@@ -195,7 +206,7 @@ def show_exam(mid, review):
         st.info("This lesson was made before the exam existed. Prepare it first: the Examiner tags the quiz "
                 "questions with concepts and writes the practical task.", icon=":material/build:")
         cost = coach.estimate_prepare_cost(m["profile_id"])
-        if st.button(f"Prepare exam (~${cost:.2f})", key=f"prep{mid}", icon=":material/build:"):
+        if st.button(f"Prepare exam (~{usd(cost)})", key=f"prep{mid}", icon=":material/build:"):
             with st.spinner("Examiner is preparing the exam..."):
                 run_safely(coach.prepare_exam, mid)
             st.rerun()
@@ -221,7 +232,7 @@ def show_exam(mid, review):
                      "These concepts are now in your spaced review.", icon=":material/cancel:")
             show_missed(last["details"].get("missed", []))
             typical, worst = coach.estimate_new_quiz_cost(m["profile_id"])
-            if st.button(f"Get a new quiz (~${typical:.2f}, max ${worst:.2f})", key=f"newquiz{mid}",
+            if st.button(f"Get a new quiz (~{usd(typical)}, max {usd(worst)})", key=f"newquiz{mid}",
                          icon=":material/refresh:", type="primary"):
                 with st.spinner("Examiner is writing new questions, Quiz solver is checking them..."):
                     run_safely(coach.new_quiz, mid)
@@ -230,7 +241,7 @@ def show_exam(mid, review):
             with st.form(f"quiz{mid}-{len(attempts)}"):
                 given = {}
                 for i, q in enumerate(gs["questions"], 1):
-                    st.markdown(f"**{i}. {q['question']}**")
+                    st.markdown(f"**{i}.** {q['question']}")
                     given[q["id"]] = answer_widget(q, f"qa{mid}-{len(attempts)}-{q['id']}", "Your answer")
                 if st.form_submit_button("Submit answers", type="primary"):
                     run_safely(coach.submit_quiz, mid, given)
@@ -276,7 +287,7 @@ def show_exam(mid, review):
                 files = st.file_uploader(f"Images: screenshots or photos of your working (up to {config.IMAGE_MAX_COUNT})",
                                          type=["png", "jpg", "jpeg"],
                                          accept_multiple_files=True)
-                if st.form_submit_button(f"Submit for grading (~${cost:.2f})", type="primary"):
+                if st.form_submit_button(f"Submit for grading (~{usd(cost)})", type="primary"):
                     with st.spinner("Grader is checking each rubric item..."):
                         run_safely(coach.submit_task, mid, text, [f.getvalue() for f in files or []])
                     st.rerun()
@@ -327,7 +338,7 @@ def show_due_reviews(pid):
             mtitle = store.get_milestone(conn, card["milestone_id"])["title"]
             st.caption(f"{mtitle} · {card['concept']}")
             with st.form(f"review{card['id']}-{q['bank_id']}"):
-                st.markdown(f"**{q['question']}**")
+                st.markdown(q["question"])
                 given = answer_widget(q, f"ra{card['id']}-{q['bank_id']}", "Your answer")
                 if st.form_submit_button("Check", type="primary"):
                     res = run_safely(coach.answer_review, card["id"], q["bank_id"], given)
@@ -411,12 +422,12 @@ with st.sidebar:
 
     st.divider()
     month, total = store.month_spend(conn), store.total_spend(conn)
-    st.metric("Spent this month", f"${month:.4f}")
-    st.caption(f"All time: ${total:.4f}")
+    st.metric("Spent this month", f"{usd(month, 4)}")
+    st.caption(f"All time: {usd(total, 4)}")
     if month >= config.STOP_USD:
-        st.error(f"Stopped: monthly limit ${config.STOP_USD:.0f} reached. No new API calls.")
+        st.error(f"Stopped: monthly limit {usd(config.STOP_USD, 0)} reached. No new API calls.")
     elif month >= config.WARN_USD:
-        st.warning(f"Warning: over ${config.WARN_USD:.0f} this month (stop at ${config.STOP_USD:.0f}).")
+        st.warning(f"Warning: over {usd(config.WARN_USD, 0)} this month (stop at {usd(config.STOP_USD, 0)}).")
 
 # ---------------- main ----------------
 if st.session_state.get("error"):
@@ -592,14 +603,14 @@ elif stage == "learning":
             if store.lesson_is_outdated(conn, mid):
                 st.badge("Outdated: written before current sources", icon=":material/history:", color="orange")
             typical, worst = coach.estimate_lesson_cost(m["profile_id"])
-            if st.button(f"Regenerate with current sources (~${typical:.2f}, max ${worst:.2f})",
+            if st.button(f"Regenerate with current sources (~{usd(typical)}, max {usd(worst)})",
                          key=f"regen{mid}", icon=":material/refresh:"):
                 with st.spinner("Regenerating and checking (the old lesson stays until the new one is ready)..."):
                     run_safely(coach.request_lesson, mid, True)
                 st.rerun()
             if store.lesson_status(lesson) == "unchecked":
                 typical, worst = coach.estimate_check_cost(m["profile_id"])
-                if st.button(f"Run checks (~${typical:.2f}, max ${worst:.2f})", key=f"check{mid}",
+                if st.button(f"Run checks (~{usd(typical)}, max {usd(worst)})", key=f"check{mid}",
                              icon=":material/fact_check:"):
                     with st.spinner("Fact-checker and Pedagogy reviewer are checking..."):
                         run_safely(coach.run_checks, mid)

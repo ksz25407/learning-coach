@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from agents import formatting
+
 SYSTEM = """You are the Examiner in a personal learning app. Write a short quiz that tests the
 milestone objective, using only what the LESSON teaches. Match the learner's practice_type
 (software: tools, commands, settings, values, order of steps; math: numeric problems with
@@ -19,9 +21,9 @@ units; language: exact words and forms; hands-on: measurements, procedures, safe
 Allowed question kinds (no others):
 - "multiple_choice": 3-5 choices (plain text, no "A." prefixes). answer = the letter of the one
   correct choice ("A" for the first). Exactly one choice is correct.
-- "numeric": answer = the number only (e.g. "2200"); unit = its unit symbol (e.g. "Ω", "mm",
-  "V", "µA/V²"; "" if none); tolerance_pct = allowed error in percent (1 for exact calculations, up to 5
-  for values read off a chart).
+- "numeric": answer = the number only (e.g. "2200"); unit = its unit symbol in plain text,
+  never LaTeX (e.g. "Ω", "mm", "V", "µA/V²"; "" if none); tolerance_pct = allowed error in
+  percent (1 for exact calculations, up to 5 for values read off a chart).
 - "exact_term": answer = one short term or name; alternates = other spellings or forms that are
   also correct (e.g. British/American spelling, abbreviation).
 
@@ -36,7 +38,11 @@ Rules:
 - Unused fields: choices = [], unit = "", tolerance_pct = 0, alternates = [].
 - If AVOID is given, write NEW questions that don't repeat any of those, and avoid the
   problems listed (a question another solver got "wrong" was probably ambiguous).
-"""
+- question may use LaTeX and, if it needs a circuit, a netlist block after the question
+  sentence (rules below). The question must state every value needed to answer it.
+  answer, unit and alternates are always plain text.
+
+""" + formatting.ALL
 
 
 class Question(BaseModel):
@@ -105,7 +111,8 @@ Rubric rules:
   final line of the working states V_out ≈ 3.3 V", "image 2 shows the template name in the
   title bar").
 - Doable in the milestone's estimated time.
-"""
+
+""" + formatting.ALL
 
 
 class RubricItem(BaseModel):
@@ -119,12 +126,17 @@ class Task(BaseModel):
     screenshots: list[str]
 
 
-def draft_task(llm, profile: dict, milestone: dict, lesson_text: str, profile_id=None) -> dict:
-    """Return {"proof_type", "instructions", "rubric": [{"id", "criterion", "evidence"}], "screenshots"}."""
+def draft_task(llm, profile: dict, milestone: dict, lesson_text: str, profile_id=None,
+               problems: list[str] | None = None) -> dict:
+    """Return {"proof_type", "instructions", "rubric": [{"id", "criterion", "evidence"}], "screenshots"}.
+    `problems`: what the app's checks found wrong with the previous draft (it is rewritten)."""
     proof = profile.get("proof_of_skill", "explain_back")
     request = (f"Milestone: {milestone['title']}\nObjective: {milestone['objective']}\n"
                f"Estimated time: {milestone.get('est_hours') or '?'} h\nproof_of_skill: {proof}\n\n"
                f"LESSON:\n{lesson_text}")
+    if problems:
+        request += ("\n\nYour previous draft was rejected by the app's checks. Write a new task without these "
+                    "problems:\n" + "\n".join(f"- {p}" for p in problems))
     task = llm.call_structured("examiner_task", TASK_SYSTEM, [{"role": "user", "content": request}], Task,
                                profile=profile, profile_id=profile_id)
     rubric = [{"id": f"r{i}", **item.model_dump()} for i, item in enumerate(task.rubric, 1)]

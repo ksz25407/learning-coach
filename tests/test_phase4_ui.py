@@ -57,7 +57,7 @@ def test_exam_replaces_checkbox_and_hides_answers(tmp_path, monkeypatch):
     assert "Question 1?" in page and "Because 1." not in page  # explanations only after you answer
     assert "Model the ground floor walls." in page and "floor plan with dimensions" in page
     assert len(at.radio) == 5
-    assert any(b.label.startswith("Submit for grading (~$") for b in at.button)
+    assert any(b.label.startswith("Submit for grading (~\\$") for b in at.button)
 
 
 def test_failed_quiz_shows_correct_answers_and_section_links(tmp_path, monkeypatch):
@@ -72,7 +72,7 @@ def test_failed_quiz_shows_correct_answers_and_section_links(tmp_path, monkeypat
     page = " ".join(m.value for m in at.markdown)
     assert "Correct: **A. Wall**" in page and "Because 1." in page
     assert "[Drawing walls](#drawing-walls)" in page
-    assert any(b.label.startswith("Get a new quiz (~$") for b in at.button)
+    assert any(b.label.startswith("Get a new quiz (~\\$") for b in at.button)
     conn = store.connect(config.DB_PATH)
     assert store.get_milestone(conn, mid)["status"] == "active"  # not passed
     assert len(store.cards(conn, pid)) == 1  # missed concept went into review
