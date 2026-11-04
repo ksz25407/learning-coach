@@ -92,6 +92,48 @@ def test_lesson_generated_once(coach, fake, conn):
     assert lesson1["verified"] == 0
 
 
+def count(conn, table, where="1=1", args=()):
+    return conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}", args).fetchone()[0]
+
+
+def test_delete_subject_removes_data_but_keeps_spend(coach, fake, conn):
+    keep = scope_to_learning(coach, fake)
+    gone = scope_to_learning(coach, fake)
+    for pid in (keep, gone):
+        first = store.get_milestones(conn, pid)[0]
+        fake.messages.text_replies = ["## Walls\nDraw walls."]
+        coach.request_lesson(first["id"])
+    gone_milestones = [m["id"] for m in store.get_milestones(conn, gone)]
+    usage_before = count(conn, "usage_log")
+    month_before, total_before = store.month_spend(conn), store.total_spend(conn)
+    assert count(conn, "usage_log", "profile_id = ?", (gone,)) > 0
+
+    coach.delete_subject(gone)
+
+    # The deleted subject's data is gone...
+    assert store.get_profile(conn, gone) is None
+    assert store.get_milestones(conn, gone) == []
+    assert store.get_chat(conn, gone) == []
+    for mid in gone_milestones:
+        assert store.get_lesson(conn, mid) is None
+    # ...its spend history is kept...
+    assert count(conn, "usage_log") == usage_before
+    assert store.month_spend(conn) == month_before
+    assert store.total_spend(conn) == total_before
+    # ...and the other subject is untouched.
+    assert coach.stage(keep) == "learning"
+    assert len(store.get_milestones(conn, keep)) == 4
+    assert store.get_lesson(conn, store.get_milestones(conn, keep)[0]["id"]) is not None
+    assert store.get_chat(conn, keep) != []
+
+
+def test_delete_subject_mid_scoping(coach, fake, conn):
+    pid = coach.new_subject()  # no profile data, no milestones yet
+    coach.delete_subject(pid)
+    assert store.get_profile(conn, pid) is None
+    assert store.get_chat(conn, pid) == []
+
+
 def test_chat_sends_only_last_n(coach, fake, conn):
     pid = scope_to_learning(coach, fake)
     for i in range(30):

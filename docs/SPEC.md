@@ -20,7 +20,7 @@ Build a local app that helps me learn ANY new subject with clear objectives, min
 
 \## Architecture (5 layers)
 
-1\. UI: Streamlit on localhost. Chat panel + milestone checklist with progress.
+1\. UI: Streamlit on localhost. Chat panel + milestone checklist with progress. Sidebar to switch subjects, start a new one, and delete the selected one (delete needs a second "Are you sure?" click).
 
 2\. Coach (orchestrator): the only agent I talk to. Routes tasks to other agents, keeps the plan, and only unlocks the next milestone after I pass the Examiner.
 
@@ -95,6 +95,8 @@ No subject is hard-coded. Every agent reads the subject profile. Revit is just t
 \## Data (SQLite)
 
 profiles, milestones, objectives, lessons (verified flag, sources), quiz\_results, review\_schedule (spaced repetition via py-fsrs), usage\_log.
+
+Deleting a subject removes its profile, milestones, objectives, lessons, quiz results, review schedule and chat messages, but keeps its usage\_log rows so monthly and all-time spend stay accurate.
 
 
 

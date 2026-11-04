@@ -53,7 +53,26 @@ with st.sidebar:
                            format_func=lambda i: labels[i])
         if pid != st.session_state.get("profile_id"):
             st.session_state.open_milestone = None
+            st.session_state.confirm_delete = None
         st.session_state.profile_id = pid
+
+        # Delete needs two clicks: "Delete subject", then "Yes, delete".
+        if st.session_state.get("confirm_delete") != pid:
+            if st.button("Delete subject", key="delete", use_container_width=True):
+                st.session_state.confirm_delete = pid
+                st.rerun()
+        else:
+            st.warning(f"Delete **{labels[pid]}**? Its plan, lessons and chat will be removed. "
+                       "Spend history is kept.")
+            c1, c2 = st.columns(2)
+            if c1.button("Yes, delete", key="delete_yes", type="primary"):
+                coach.delete_subject(pid)
+                for k in ("profile_id", "open_milestone", "confirm_delete"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+            if c2.button("Cancel", key="delete_cancel"):
+                st.session_state.confirm_delete = None
+                st.rerun()
 
     st.divider()
     month, total = store.month_spend(conn), store.total_spend(conn)

@@ -37,6 +37,24 @@ def list_profiles(conn):
     return conn.execute("SELECT * FROM profiles ORDER BY id").fetchall()
 
 
+def delete_profile(conn, profile_id: int):
+    """Delete a subject and everything that belongs to it, in one transaction.
+
+    usage_log rows are KEPT on purpose, so monthly and all-time spend stay accurate.
+    """
+    milestone_ids = "SELECT id FROM milestones WHERE profile_id = ?"
+    lesson_ids = f"SELECT id FROM lessons WHERE milestone_id IN ({milestone_ids})"
+    with conn:  # commits on success, rolls back on error
+        # Children first, because of the foreign keys.
+        conn.execute(f"DELETE FROM review_schedule WHERE lesson_id IN ({lesson_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM lessons WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM quiz_results WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM objectives WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute("DELETE FROM milestones WHERE profile_id = ?", (profile_id,))
+        conn.execute("DELETE FROM chat_messages WHERE profile_id = ?", (profile_id,))
+        conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
+
+
 def set_stage(conn, profile_id: int, stage: str):
     conn.execute("UPDATE profiles SET stage = ? WHERE id = ?", (stage, profile_id))
     conn.commit()

@@ -32,6 +32,10 @@ class Coach:
         store.add_chat(self.conn, pid, "greeting", "assistant", GREETING)
         return pid
 
+    def delete_subject(self, profile_id: int):
+        """Remove the subject's profile, plan, lessons and chat. Spend history is kept."""
+        store.delete_profile(self.conn, profile_id)
+
     def stage(self, profile_id: int) -> str:
         return store.get_profile(self.conn, profile_id)["stage"]
 
