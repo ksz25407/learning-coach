@@ -54,6 +54,9 @@ AGENT_MARKERS = {
     "examiner": "You are the Examiner",
     "quiz_solver": "You are the Quiz solver",
     "teacher": "You are the Teacher",
+    "examiner_task": "You are the Task examiner",
+    "concept_tagger": "You are the Concept tagger",
+    "grader": "You are the Grader",
 }
 
 
@@ -115,11 +118,29 @@ class FakeMessages:
 
 # ---- Phase 3: checker replies ----
 
-def mc(question="Which tool draws walls?", answer="A", choices=("Wall", "Floor", "Roof")):
+def mc(question="Which tool draws walls?", answer="A", choices=("Wall", "Floor", "Roof"),
+       concept="wall tool", section="Walls"):
     """An Examiner multiple-choice question."""
     from agents.examiner import Question
     return Question(kind="multiple_choice", question=question, choices=list(choices), answer=answer,
-                    unit="", tolerance_pct=0, alternates=[], explanation="The lesson says so.")
+                    unit="", tolerance_pct=0, alternates=[], explanation="The lesson says so.",
+                    concept=concept, section=section)
+
+
+def task_draft(n_items=3, screenshots=("floor plan with dimensions",)):
+    """An Examiner practical task."""
+    from agents.examiner import RubricItem, Task
+    return Task(instructions="Model the ground floor walls.",
+                rubric=[RubricItem(criterion=f"Item {i}", evidence=f"visible thing {i}") for i in range(1, n_items + 1)],
+                screenshots=list(screenshots))
+
+
+def grading(*verdicts, evidence="Screenshot 1: dimension 4200 between grids A and B"):
+    """A Grader reply: one verdict per rubric item r1, r2, ..."""
+    from agents.grader import Grading, ItemGrade
+    return Grading(grades=[ItemGrade(id=f"r{i}", verdict=v, evidence=evidence if v != "cant_tell" else "",
+                                     reason="because", need="a closer screenshot" if v == "cant_tell" else "")
+                           for i, v in enumerate(verdicts, 1)])
 
 
 def quiz(*questions):
@@ -162,6 +183,7 @@ def pass_all_checks(fake, n_questions=5):
         "pedagogy": ped_flags(),
         "examiner": quiz(*[mc(f"Question {i}?") for i in range(n_questions)]),
         "quiz_solver": solver_says(lambda qid: "A"),
+        "examiner_task": task_draft(),
     })
 
 
