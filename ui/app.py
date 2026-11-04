@@ -115,7 +115,7 @@ def answer_widget(q: dict, key: str, label: str) -> str:
         return pick or ""
     if q["kind"] == "numeric":
         unit = q.get("unit") or ""
-        return st.text_input(label, key=key, placeholder=f"e.g. 2200 {unit}".strip(),
+        return st.text_input(label, key=key, placeholder=f"a number in {unit}" if unit else "a number",
                              help=f"A number{', in ' + unit if unit else ''}. Prefixes like k or m are fine.")
     return st.text_input(label, key=key)
 
@@ -161,7 +161,7 @@ def show_history(mid):
                 st.markdown(f"**{when} · Task: grading failed** ({h['error']})")
             else:
                 counts = {v: sum(g["verdict"] == v for g in h["grades"]) for v in VERDICT_TEXT}
-                st.markdown(f"**{when} · Task** ({h['n_images']} screenshot(s)): {counts['pass']} pass, "
+                st.markdown(f"**{when} · Task** ({h['n_images']} image(s)): {counts['pass']} pass, "
                             f"{counts['fail']} fail, {counts['cant_tell']} can't tell")
 
 
@@ -247,7 +247,7 @@ def show_exam(mid, review):
         st.markdown("**Rubric** (every item must pass)  \n" +
                     "  \n".join(f"{r['id']}. {r['criterion']} · _needs: {r['evidence']}_" for r in task["rubric"]))
         if task["screenshots"]:
-            st.markdown("**Screenshots to take**  \n" + "  \n".join(f"- {s}" for s in task["screenshots"]))
+            st.markdown("**Images to send**  \n" + "  \n".join(f"- {s}" for s in task["screenshots"]))
 
         grades = gs["grades"]
         if grades:
@@ -273,7 +273,8 @@ def show_exam(mid, review):
             with st.form(f"task{mid}", clear_on_submit=True):
                 text = st.text_area("Your answer / notes" if task["screenshots"] else "Your answer",
                                     height=200 if task["proof_type"] != "file" else 100)
-                files = st.file_uploader(f"Screenshots (up to {config.IMAGE_MAX_COUNT})", type=["png", "jpg", "jpeg"],
+                files = st.file_uploader(f"Images: screenshots or photos of your working (up to {config.IMAGE_MAX_COUNT})",
+                                         type=["png", "jpg", "jpeg"],
                                          accept_multiple_files=True)
                 if st.form_submit_button(f"Submit for grading (~${cost:.2f})", type="primary"):
                     with st.spinner("Grader is checking each rubric item..."):
@@ -452,7 +453,7 @@ elif stage == "confirm_profile":
         deadline_date = st.date_input("Deadline date (for the on-track check)", value=None)
         practice = st.selectbox("Practice type", practice_opts, index=practice_opts.index(p["practice_type"]))
         proof = st.selectbox("Proof of skill", proof_opts, index=proof_opts.index(p["proof_of_skill"]))
-        notes = st.text_area("Notes (units, tools, versions)", p["notes"])
+        notes = st.text_area("Notes (units, tools, versions, course conventions)", p["notes"])
         if st.form_submit_button("Confirm and build my plan"):
             coach.confirm_profile(pid, SubjectProfile(
                 subject=subject, goal=goal, level=level, hours_per_week=hours, deadline=deadline,

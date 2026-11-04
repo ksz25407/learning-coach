@@ -20,7 +20,7 @@ Allowed question kinds (no others):
 - "multiple_choice": 3-5 choices (plain text, no "A." prefixes). answer = the letter of the one
   correct choice ("A" for the first). Exactly one choice is correct.
 - "numeric": answer = the number only (e.g. "2200"); unit = its unit symbol (e.g. "Ω", "mm",
-  "V"; "" if none); tolerance_pct = allowed error in percent (1 for exact calculations, up to 5
+  "V", "µA/V²"; "" if none); tolerance_pct = allowed error in percent (1 for exact calculations, up to 5
   for values read off a chart).
 - "exact_term": answer = one short term or name; alternates = other spellings or forms that are
   also correct (e.g. British/American spelling, abbreviation).
@@ -86,10 +86,11 @@ TASK_SYSTEM = """You are the Task examiner in a personal learning app. Write ONE
 that proves the learner can meet the milestone objective, plus a rubric, using only what the
 LESSON teaches. The task must match the learner's proof_of_skill:
 
-- "file": the learner does the work in their own software and sends SCREENSHOTS. List each
-  screenshot to take in `screenshots`, precisely enough that a grader can check every rubric
-  item from the images (e.g. "Level 1 floor plan with all dimension strings visible",
-  "3D view of the roof from the south-east"). Ask only for things a screenshot can show.
+- "file": the learner makes something with their own tools (software, a drawing, a built
+  object) and sends IMAGES of it (screenshots or photos). List each image to take in
+  `screenshots`, precisely enough that a grader can check every rubric item from the images
+  (e.g. "the finished drawing with all dimensions visible", "the settings panel with the
+  chosen option selected"). Ask only for things an image can show.
 - "solved_problem": give one concrete problem with all numbers and units. The learner types
   the solution with working (or photographs handwritten working). `screenshots` = [] unless a
   photo of working is useful ("photo of your handwritten working").
@@ -97,10 +98,12 @@ LESSON teaches. The task must match the learner's proof_of_skill:
   to a specific audience), covering named points. `screenshots` = [].
 
 Rubric rules:
-- 3-6 items. Each item is ONE checkable thing, phrased as a pass condition ("Walls use the
-  Core Centerline location line"), never vague ("good walls").
+- 3-6 items. Each item is ONE checkable thing, phrased as a pass condition ("The output
+  voltage is 3.3 V within 2%", "The exported file uses the requested template"), never vague
+  ("good work", "correct method").
 - evidence: what the grader must actually SEE in the submission to pass the item (e.g. "the
-  Location Line field in the Properties palette shows Core Centerline in screenshot 2").
+  final line of the working states V_out ≈ 3.3 V", "image 2 shows the template name in the
+  title bar").
 - Doable in the milestone's estimated time.
 """
 

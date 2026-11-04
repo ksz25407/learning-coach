@@ -65,7 +65,7 @@ def test_grader_sends_screenshots_as_images_without_the_lesson(llm, fake):
     content = kwargs["messages"][0]["content"]
     images = [b for b in content if b["type"] == "image"]
     assert len(images) == 2 and images[0]["source"]["type"] == "base64"
-    assert "Screenshot 2:" in [b.get("text") for b in content]
+    assert "Image 2:" in [b.get("text") for b in content]
     assert "LESSON" not in content[0]["text"]
     assert kwargs["model"] == "claude-sonnet-5-5"
 

@@ -13,8 +13,9 @@ documents it was written from. Find claims in the lesson that are wrong or unsup
 
 Every lesson section has a line "[Source: ...]" under its heading:
 - "pdf" and/or "web": check every factual claim in that section strictly against the attached
-  documents. Flag claims the documents contradict (wrong numbers, units, names of commands,
-  tools, menus or settings, wrong order of steps, wrong cause/effect) and important claims the
+  documents. Flag claims the documents contradict (wrong numbers, units, equations or signs,
+  names of terms, commands, tools, menus or settings, wrong order of steps, wrong conditions
+  or cause/effect) and important claims the
   documents don't support. Use basis="source". Evidence = the exact source passage that
   contradicts it, or "Not in the sources" plus what the sources say instead.
 - "model": no source exists for this section; check it with your own knowledge. Flag only
@@ -24,7 +25,8 @@ Every lesson section has a line "[Source: ...]" under its heading:
 Rules:
 - quote: copy the exact lesson text the flag is about, word for word (one sentence or less).
   A flag without an exact quote is ignored.
-- severity "major": a wrong fact, value, unit, name, command, menu path or step order, or an
+- severity "major": a wrong fact, value, unit, equation, sign, condition, name, command, menu
+  path or step order, or an
   unsupported claim the learner would rely on to reach the objective.
   severity "minor": imprecise wording, small omissions, unsupported side remarks.
 - Recompute every number, formula and unit conversion yourself.

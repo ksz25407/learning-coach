@@ -126,13 +126,18 @@ def mc_letter(given: str, choices: list[str]) -> str | None:
     return None
 
 
-# Units: SI prefixes on any base unit below, plus a few length units for Revit.
+# Units. A unit is read as base units with powers plus a scale factor, so compound units
+# work too: 'µA/V²' -> ({A: 1, V: -2}, 1e-6). Two answers match only if their base units are
+# the same. Any SI prefix works on any base unit; inches and feet become metres.
 SI_PREFIX = {"p": 1e-12, "n": 1e-9, "µ": 1e-6, "μ": 1e-6, "u": 1e-6, "m": 1e-3, "c": 1e-2,
              "k": 1e3, "K": 1e3, "M": 1e6, "G": 1e9}
 BASE_UNITS = {"Ω", "V", "A", "W", "F", "H", "Hz", "s", "m", "g", "J", "C", "S", "N", "Pa", "VA", "Wh"}
 LENGTH_UNITS = {"in": 0.0254, "inch": 0.0254, "inches": 0.0254, '"': 0.0254, "″": 0.0254,
                 "ft": 0.3048, "foot": 0.3048, "feet": 0.3048, "'": 0.3048, "′": 0.3048}
 NUMBER = re.compile(r"^\s*([-+]?(?:\d[\d,]*\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*(.*?)\s*$")
+SUPERSCRIPTS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻", "0123456789-")
+UNIT_TERM = re.compile(r"^([^\d^\-]+)\^?(-?\d+)?$")  # 'mA', 'V^2', 'V2', 's^-1'
+MINUS_SIGNS = {"−": "-", "–": "-"}  # Unicode minus and en dash, as models sometimes write them
 
 
 def _clean_unit(u: str) -> str:
@@ -142,29 +147,69 @@ def _clean_unit(u: str) -> str:
             "amp": "A", "watts": "W", "watt": "W"}.get(u, u)
 
 
-def unit_factor(unit: str, expected_unit: str) -> tuple[str, float] | None:
-    """(base unit, factor to base) for `unit`, or None if it can't be read.
-    A bare prefix ('2.2k') or no unit at all is read as the expected unit."""
+def _unit_term(term: str) -> tuple[dict, float] | None:
+    """One factor of a unit, e.g. 'mA' or 'V^2' -> ({base: power}, scale)."""
+    m = UNIT_TERM.match(term)
+    if not m:
+        return None
+    sym, power = m.group(1), int(m.group(2) or 1)
+    if sym in LENGTH_UNITS:
+        base, scale = "m", LENGTH_UNITS[sym]
+    elif sym in BASE_UNITS:  # exact match first: 'm' is metres, 'Pa' is pascals
+        base, scale = sym, 1.0
+    elif sym[0] in SI_PREFIX and sym[1:] in BASE_UNITS:
+        base, scale = sym[1:], SI_PREFIX[sym[0]]
+    else:
+        return None
+    return {base: power}, scale ** power
+
+
+def parse_unit(unit: str) -> tuple[dict, float] | None:
+    """'µA/V²' -> ({'A': 1, 'V': -2}, 1e-6). '' -> ({}, 1.0). None if it can't be read."""
+    u = _clean_unit(unit).translate(SUPERSCRIPTS)
+    if u == "":
+        return {}, 1.0
+    if u.count("/") > 1:
+        return None
+    dims, scale = {}, 1.0
+    num, _, den = u.partition("/")
+    for side, sign in ((num, 1), (den, -1)):
+        for term in re.split(r"[·*⋅ ]+", side.strip()):
+            if term in ("", "1"):  # '1/s'
+                continue
+            got = _unit_term(term)
+            if got is None:
+                return None
+            for base, power in got[0].items():
+                dims[base] = dims.get(base, 0) + sign * power
+            scale *= got[1] ** sign
+    return {b: p for b, p in dims.items() if p != 0}, scale
+
+
+def unit_factor(unit: str, expected_unit: str) -> tuple[tuple, float] | None:
+    """(base units, factor to base) for `unit`, or None if it can't be read. Base units are a
+    sorted tuple of (base, power), so 'V/V' and no unit are both ().
+    No unit is read as the expected unit. A bare prefix ('2.2k') is that prefix on the
+    expected unit; a bare 'm' means milli unless metres are expected ('5m' for 5 mΩ)."""
+    expected = parse_unit(expected_unit)
     u = _clean_unit(unit)
     if u == "":
-        u = _clean_unit(expected_unit)
-        if u == "":
-            return "", 1.0
-    if u in LENGTH_UNITS:
-        return "m", LENGTH_UNITS[u]
-    if u in BASE_UNITS:
-        return u, 1.0
-    if u in SI_PREFIX:  # '2.2k' with expected 'Ω'
-        base = unit_factor(expected_unit, "")
-        return (base[0], SI_PREFIX[u] * base[1]) if base else None
-    if u[0] in SI_PREFIX and u[1:] in BASE_UNITS:
-        return u[1:], SI_PREFIX[u[0]]
-    return None
+        got = expected
+    elif u in SI_PREFIX and expected and expected[0] and not (u == "m" and expected[0] == {"m": 1}):
+        got = expected[0], SI_PREFIX[u] * expected[1]
+    else:
+        got = parse_unit(u)
+    if got is None:
+        return None
+    return tuple(sorted(got[0].items())), got[1]
 
 
-def parse_quantity(text: str, expected_unit: str) -> tuple[float, str] | None:
-    """'2.2 kΩ' -> (2200.0, 'Ω'). None if it isn't a number (+ optional unit)."""
-    m = NUMBER.match(text or "")
+def parse_quantity(text: str, expected_unit: str) -> tuple[float, tuple] | None:
+    """'2.2 kΩ' -> (2200.0, (('Ω', 1),)). None if it isn't a number (+ optional unit)."""
+    text = text or ""
+    for a, b in MINUS_SIGNS.items():
+        text = text.replace(a, b)
+    m = NUMBER.match(text)
     if not m:
         return None
     try:
@@ -185,19 +230,34 @@ def numbers_match(key: str, given: str, unit: str, tolerance_pct: float) -> bool
     return abs(k[0] - g[0]) <= tol + 1e-9 * max(abs(k[0]), 1e-30)
 
 
+def _match_choice(question: dict, given: str) -> bool:
+    key = mc_letter(question["answer"], question.get("choices", []))
+    return key is not None and mc_letter(given, question.get("choices", [])) == key
+
+
+def _match_numeric(question: dict, given: str) -> bool:
+    tol = question.get("tolerance_pct") or config.QUIZ_DEFAULT_TOLERANCE_PCT
+    return numbers_match(question["answer"], given, question.get("unit", ""), tol)
+
+
+def _match_term(question: dict, given: str) -> bool:
+    accepted = [question["answer"], *question.get("alternates", [])]
+    return norm_term(given) != "" and norm_term(given) in {norm_term(a) for a in accepted}
+
+
+# One marking rule per question kind. To add a kind later (e.g. "phasor" for AC answers like
+# '5∠30° V'), write its rule here and add the kind to the Examiner's Question schema.
+ANSWER_RULES = {
+    "multiple_choice": _match_choice,
+    "numeric": _match_numeric,
+    "exact_term": _match_term,
+}
+
+
 def answers_match(question: dict, given: str) -> bool:
-    """Does the solver's answer agree with the answer key?"""
-    kind = question["kind"]
-    if kind == "multiple_choice":
-        key = mc_letter(question["answer"], question.get("choices", []))
-        return key is not None and mc_letter(given, question.get("choices", [])) == key
-    if kind == "numeric":
-        tol = question.get("tolerance_pct") or config.QUIZ_DEFAULT_TOLERANCE_PCT
-        return numbers_match(question["answer"], given, question.get("unit", ""), tol)
-    if kind == "exact_term":
-        accepted = [question["answer"], *question.get("alternates", [])]
-        return norm_term(given) != "" and norm_term(given) in {norm_term(a) for a in accepted}
-    return False
+    """Does the given answer agree with the answer key? Unknown kinds never match."""
+    rule = ANSWER_RULES.get(question["kind"])
+    return rule is not None and rule(question, given)
 
 
 # ---------- Phase 4: exam gate ----------
@@ -229,7 +289,7 @@ def apply_evidence_rule(grades: list[dict]) -> list[dict]:
         if g["verdict"] == "pass" and len((g.get("evidence") or "").strip()) < 3:
             g["verdict"] = "cant_tell"
             g["reason"] = f"No specific evidence named, so this can't count as a pass. {g.get('reason', '')}".strip()
-            g["need"] = g.get("need") or "Show this item clearly in a screenshot or in your text."
+            g["need"] = g.get("need") or "Show this item clearly in an image or in your text."
             g["no_evidence"] = True
         out.append(g)
     return out

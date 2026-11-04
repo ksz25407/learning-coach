@@ -519,16 +519,16 @@ class Coach:
         store.add_to_bank(self.conn, milestone_id, questions)
 
     def submit_task(self, milestone_id: int, text: str, images: list[bytes]) -> dict:
-        """Send your task (text + screenshots) to the Grader. Returns the new gate state."""
+        """Send your task (text + images) to the Grader. Returns the new gate state."""
         st = self.gate_state(milestone_id)
         if st["disabled"]:
             raise ValueError(st["disabled"])
         if st["task"] is None:
             raise ValueError("There is no task yet. Use 'Prepare exam'.")
         if len(images) > config.IMAGE_MAX_COUNT:
-            raise ValueError(f"Send at most {config.IMAGE_MAX_COUNT} screenshots.")
+            raise ValueError(f"Send at most {config.IMAGE_MAX_COUNT} images.")
         if not text.strip() and not images:
-            raise ValueError("Add your answer or at least one screenshot.")
+            raise ValueError("Add your answer or at least one image.")
         try:
             prepared = [grader.prepare_image(b) for b in images]
         except Exception as e:  # Pillow raises many kinds of errors for a bad file

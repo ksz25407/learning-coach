@@ -14,7 +14,8 @@ You need to find out:
 - level: their current level (beginner / some experience / advanced, plus a short note)
 - hours_per_week: how many hours per week they can study
 - deadline: a date or "none"
-- notes: units, software versions, tools, or anything else that shapes the lessons ("" if none)
+- notes: units, tools or software versions, course or textbook conventions (notation, sign
+  conventions, standard approximations), or anything else that shapes the lessons ("" if none)
 Then choose:
 - practice_type: "software" | "math" | "language" | "hands-on"
 - proof_of_skill: "file" (they produce a file), "solved_problem", or "explain_back"

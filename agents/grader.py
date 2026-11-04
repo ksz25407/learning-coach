@@ -1,6 +1,6 @@
 """Grader (Phase 4): grades your practical task against the Examiner's rubric.
 
-It sees the task, the rubric and your submission (text + screenshots). It does NOT see the
+It sees the task, the rubric and your submission (text + images). It does NOT see the
 lesson or the quiz answer key. Each rubric item gets pass / fail / cant_tell with a one-line
 reason. Python then enforces the evidence rule (checks.apply_evidence_rule): a "pass" that
 doesn't name specific visible evidence becomes "cant_tell".
@@ -20,15 +20,17 @@ against the RUBRIC, one verdict per rubric item. Be strict and fair.
 
 Verdicts:
 - "pass": the submission clearly shows the item is met. You MUST fill `evidence` with the
-  specific thing you can see that proves it: which screenshot and what is visible in it
-  (e.g. "Screenshot 2: Properties palette shows Location Line = Core Centerline"), or a short
-  quote from the learner's text. If you cannot point to specific visible evidence, the
-  verdict is NOT pass, it is "cant_tell". Never pass an item because it is probably fine.
+  specific thing you can see that proves it: which image and what is visible in it
+  (e.g. "Image 2: the settings panel shows Units = mm", "Image 1, last line of the working:
+  V_out = 3.3 V"), or a short quote from the learner's text. If you cannot point to specific
+  visible evidence, the verdict is NOT pass, it is "cant_tell". Never pass an item because it
+  is probably fine.
 - "fail": the submission clearly shows the item is NOT met (wrong value, wrong element,
   wrong step, a wrong statement). Say what is wrong in `reason`; put what you saw in `evidence`.
-- "cant_tell": the submission doesn't show enough to decide (missing screenshot, too small or
-  blurry to read, cropped, the relevant panel isn't visible). In `need`, say exactly what to
-  send next (e.g. "a screenshot of the Properties palette with one wall selected").
+- "cant_tell": the submission doesn't show enough to decide (missing image, too small or
+  blurry to read, cropped, the relevant part isn't visible). In `need`, say exactly what to
+  send next (e.g. "a sharper photo of the second page of working", "a screenshot of the
+  settings panel").
 
 Rules:
 - reason: one line.
@@ -76,13 +78,13 @@ def grade_task(llm, profile: dict, milestone: dict, task: dict, text: str,
               for r in task["rubric"]]
     header = (f"Milestone: {milestone['title']}\nObjective: {milestone['objective']}\n\n"
               f"TASK:\n{task['instructions']}\n\n"
-              f"SCREENSHOTS ASKED FOR:\n" + ("\n".join(f"- {s}" for s in task["screenshots"]) or "(none)") +
+              f"IMAGES ASKED FOR:\n" + ("\n".join(f"- {s}" for s in task["screenshots"]) or "(none)") +
               f"\n\nRUBRIC:\n{json.dumps(rubric, ensure_ascii=False, indent=1)}\n\n"
               f"LEARNER'S TEXT:\n{text.strip() or '(no text)'}\n\n"
-              f"The learner sent {len(images)} screenshot(s), numbered below.")
+              f"The learner sent {len(images)} image(s), numbered below.")
     content = [{"type": "text", "text": header}]
     for i, (media_type, data) in enumerate(images, 1):
-        content.append({"type": "text", "text": f"Screenshot {i}:"})
+        content.append({"type": "text", "text": f"Image {i}:"})
         content.append({"type": "image", "source": {"type": "base64", "media_type": media_type,
                                                      "data": base64.standard_b64encode(data).decode("ascii")}})
     result = llm.call_structured("grader", SYSTEM, [{"role": "user", "content": content}], Grading,
