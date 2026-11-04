@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS profiles (
     subject      TEXT,                                  -- NULL until the Scoper finishes
     stage        TEXT NOT NULL DEFAULT 'scoping',       -- scoping | confirm_profile | planning | learning
     profile_json TEXT,                                  -- SubjectProfile as JSON
-    created_at   TEXT NOT NULL
+    created_at   TEXT NOT NULL,
+    deadline_date TEXT                                  -- Phase 4: ISO date from the date picker (NULL = not set)
 );
 
 CREATE TABLE IF NOT EXISTS milestones (
@@ -16,7 +17,10 @@ CREATE TABLE IF NOT EXISTS milestones (
     objective  TEXT NOT NULL,                           -- testable objective
     est_hours  REAL,
     status     TEXT NOT NULL DEFAULT 'locked'
-               CHECK (status IN ('locked', 'active', 'done'))
+               CHECK (status IN ('locked', 'active', 'done')),
+    passed_at   TEXT,                                   -- Phase 4: UTC time the gate was passed
+    pass_method TEXT,                                   -- Phase 4: exam | manual_reason | manual_pre_phase4
+    pass_reason TEXT                                    -- Phase 4: your reason for a manual pass
 );
 
 CREATE TABLE IF NOT EXISTS lessons (
@@ -64,21 +68,15 @@ CREATE TABLE IF NOT EXISTS objectives (
     text         TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS quiz_results (
+CREATE TABLE IF NOT EXISTS quiz_results (            -- Phase 4: one row per quiz attempt
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     milestone_id INTEGER NOT NULL REFERENCES milestones(id),
-    score        REAL,
+    score        REAL,                                  -- 0.0 - 1.0
     passed       INTEGER,
-    details_json TEXT,
-    created_at   TEXT NOT NULL
+    details_json TEXT,                                  -- {"results": [...], "missed": [...]}
+    created_at   TEXT NOT NULL                          -- UTC
 );
 
-CREATE TABLE IF NOT EXISTS review_schedule (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    lesson_id INTEGER NOT NULL REFERENCES lessons(id),
-    due_at    TEXT NOT NULL,
-    card_json TEXT                                      -- py-fsrs card state
-);
 
 -- Phase 2: sources ------------------------------------------------------
 
@@ -129,4 +127,82 @@ CREATE TABLE IF NOT EXISTS quizzes (                    -- Examiner quiz, after 
     redrafts       INTEGER NOT NULL,
     flagged        INTEGER NOT NULL,                    -- 1 = fewer than QUIZ_MIN_QUESTIONS survived
     created_at     TEXT NOT NULL
+);
+
+-- Phase 4: exam gate, progress, spaced review ------------------------------
+-- All times in these tables are UTC ISO strings ("...+00:00").
+
+CREATE TABLE IF NOT EXISTS question_bank (              -- every verified quiz question, kept for review
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id  INTEGER NOT NULL REFERENCES milestones(id),
+    concept       TEXT NOT NULL,
+    question_json TEXT NOT NULL,                        -- the question with its answer key
+    created_at    TEXT NOT NULL,
+    last_shown_at TEXT                                  -- NULL = never shown in a review
+);
+
+CREATE TABLE IF NOT EXISTS tasks (                      -- Examiner's practical task + rubric
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id     INTEGER NOT NULL UNIQUE REFERENCES milestones(id),
+    proof_type       TEXT NOT NULL,                     -- file | solved_problem | explain_back
+    instructions     TEXT NOT NULL,
+    rubric_json      TEXT NOT NULL,                     -- [{"id", "criterion", "evidence"}]
+    screenshots_json TEXT NOT NULL,                     -- ["floor plan with dimensions visible", ...]
+    created_at       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_submissions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id INTEGER NOT NULL REFERENCES milestones(id),
+    text         TEXT NOT NULL,
+    grades_json  TEXT,                                  -- [{"id", "verdict", "reason", "evidence", "need"}]
+    error        TEXT,                                  -- grader error, if grading failed
+    created_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_images (
+    submission_id INTEGER NOT NULL REFERENCES task_submissions(id),
+    idx           INTEGER NOT NULL,
+    media_type    TEXT NOT NULL,
+    data          BLOB NOT NULL,
+    PRIMARY KEY (submission_id, idx)
+);
+
+CREATE TABLE IF NOT EXISTS overrides (                  -- your grade overrides, with reasons
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id INTEGER NOT NULL REFERENCES milestones(id),
+    item_id      TEXT NOT NULL,                         -- rubric item id
+    old_verdict  TEXT NOT NULL,
+    new_verdict  TEXT NOT NULL,
+    reason       TEXT NOT NULL,
+    created_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS review_schedule (            -- one py-fsrs card per (milestone, concept)
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id   INTEGER NOT NULL REFERENCES profiles(id),
+    milestone_id INTEGER NOT NULL REFERENCES milestones(id),
+    concept      TEXT NOT NULL,
+    due_at       TEXT NOT NULL,
+    card_json    TEXT NOT NULL,                         -- py-fsrs Card.to_json()
+    created_at   TEXT NOT NULL,
+    UNIQUE (milestone_id, concept)
+);
+
+CREATE TABLE IF NOT EXISTS review_log (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_id          INTEGER NOT NULL REFERENCES review_schedule(id),
+    question_id      INTEGER REFERENCES question_bank(id),  -- NULL = rated from a missed exam question
+    correct          INTEGER NOT NULL,
+    rating           TEXT NOT NULL,                     -- again | hard | good | easy
+    source           TEXT NOT NULL,                     -- review | exam
+    card_before_json TEXT NOT NULL,                     -- card state before this rating (for Hard/Easy)
+    reviewed_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS study_log (                  -- optional "Log study time"
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id INTEGER NOT NULL REFERENCES milestones(id),
+    minutes      REAL NOT NULL,
+    logged_at    TEXT NOT NULL
 );

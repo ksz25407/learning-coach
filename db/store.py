@@ -4,6 +4,9 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+import clock
+import config
+
 SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
 
 # Columns added after Phase 1. CREATE TABLE IF NOT EXISTS can't add columns to a table
@@ -14,6 +17,10 @@ NEW_COLUMNS = [
     ("lessons", "status", "TEXT"),
     ("lessons", "review_json", "TEXT"),
     ("lessons", "revision_rounds", "INTEGER"),
+    ("milestones", "passed_at", "TEXT"),
+    ("milestones", "pass_method", "TEXT"),
+    ("milestones", "pass_reason", "TEXT"),
+    ("profiles", "deadline_date", "TEXT"),
 ]
 
 
@@ -22,19 +29,28 @@ def now() -> str:
 
 
 def connect(path) -> sqlite3.Connection:
-    """Open the database, back it up if it needs new columns, and create anything missing."""
+    """Open the database, back it up if it needs changes, and create anything missing.
+    After a successful upgrade only the newest config.MAX_BACKUPS backups are kept."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     missing = _missing_columns(conn)
-    if missing:
+    old_reviews = _has_old_review_table(conn)
+    if missing or old_reviews:
         backup_database(conn, path)
+    if old_reviews:
+        _retire_old_review_table(conn)
     conn.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
     for table, column, sql_type in missing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+    # Milestones ticked "done" by hand before the exam gate existed.
+    conn.execute("UPDATE milestones SET pass_method = 'manual_pre_phase4'"
+                 " WHERE status = 'done' AND pass_method IS NULL")
     conn.commit()
+    if missing or old_reviews:
+        prune_backups(path)
     return conn
 
 
@@ -50,6 +66,33 @@ def _missing_columns(conn) -> list[tuple]:
         if cols and column not in cols:  # empty set = table doesn't exist yet
             missing.append((table, column, sql_type))
     return missing
+
+
+def _has_old_review_table(conn) -> bool:
+    """Phase 1-3 review_schedule was keyed by lesson_id (and never used)."""
+    return "lesson_id" in _columns(conn, "review_schedule")
+
+
+def _retire_old_review_table(conn):
+    """Drop the old, empty review_schedule so schema.sql makes the Phase 4 one.
+    If it somehow has rows, keep them under another name instead of deleting them."""
+    n = conn.execute("SELECT COUNT(*) FROM review_schedule").fetchone()[0]
+    if n == 0:
+        conn.execute("DROP TABLE review_schedule")
+    else:
+        conn.execute("ALTER TABLE review_schedule RENAME TO review_schedule_phase3")
+    conn.commit()
+
+
+def prune_backups(path: Path, keep: int | None = None) -> list[Path]:
+    """Delete all but the newest `keep` backups of this database. Returns the deleted files."""
+    path = Path(path)
+    keep = config.MAX_BACKUPS if keep is None else keep
+    backups = sorted(path.parent.glob(f"{path.stem}.backup-*{path.suffix}"))  # names sort by time
+    old = backups[:-keep] if keep > 0 else backups
+    for f in old:
+        f.unlink()
+    return old
 
 
 def backup_database(conn, path: Path) -> Path:
@@ -85,7 +128,6 @@ def delete_profile(conn, profile_id: int):
     usage_log rows are KEPT on purpose, so monthly and all-time spend stay accurate.
     """
     milestone_ids = "SELECT id FROM milestones WHERE profile_id = ?"
-    lesson_ids = f"SELECT id FROM lessons WHERE milestone_id IN ({milestone_ids})"
     upload_ids = "SELECT id FROM pdf_uploads WHERE profile_id = ?"
     with conn:  # commits on success, rolls back on error
         # Children first, because of the foreign keys.
@@ -93,7 +135,16 @@ def delete_profile(conn, profile_id: int):
         conn.execute(f"DELETE FROM pdf_pages WHERE upload_id IN ({upload_ids})", (profile_id,))
         conn.execute("DELETE FROM pdf_uploads WHERE profile_id = ?", (profile_id,))
         conn.execute(f"DELETE FROM resources WHERE milestone_id IN ({milestone_ids})", (profile_id,))
-        conn.execute(f"DELETE FROM review_schedule WHERE lesson_id IN ({lesson_ids})", (profile_id,))
+        conn.execute("DELETE FROM review_log WHERE card_id IN"
+                     " (SELECT id FROM review_schedule WHERE profile_id = ?)", (profile_id,))
+        conn.execute("DELETE FROM review_schedule WHERE profile_id = ?", (profile_id,))
+        conn.execute(f"DELETE FROM question_bank WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM task_images WHERE submission_id IN (SELECT id FROM task_submissions"
+                     f" WHERE milestone_id IN ({milestone_ids}))", (profile_id,))
+        conn.execute(f"DELETE FROM task_submissions WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM tasks WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM overrides WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM study_log WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM lessons WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM quiz_results WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM quizzes WHERE milestone_id IN ({milestone_ids})", (profile_id,))
@@ -386,3 +437,222 @@ def recent_avg_cost(conn, agent: str, n: int) -> tuple[float, int]:
         " (SELECT cost_usd FROM usage_log WHERE agent = ? ORDER BY id DESC LIMIT ?)", (agent, n)
     ).fetchone()
     return (row[0] or 0.0), row[1]
+
+
+# =====================================================================
+# Phase 4: exam gate, progress, spaced review. Times are UTC (clock.py).
+# =====================================================================
+
+def utc_now_iso() -> str:
+    return clock.to_iso(clock.utc_now())
+
+
+def set_deadline(conn, profile_id: int, deadline_date: str | None):
+    conn.execute("UPDATE profiles SET deadline_date = ? WHERE id = ?", (deadline_date, profile_id))
+    conn.commit()
+
+
+def mark_passed(conn, milestone_id: int, method: str, reason: str | None = None, when: str | None = None):
+    assert method in ("exam", "manual_reason"), method
+    conn.execute("UPDATE milestones SET status = 'done', passed_at = ?, pass_method = ?, pass_reason = ?"
+                 " WHERE id = ?", (when or utc_now_iso(), method, reason, milestone_id))
+    conn.commit()
+
+
+# ---------- question bank ----------
+
+def add_to_bank(conn, milestone_id: int, questions: list[dict]):
+    """Keep verified questions for review. A question already in the bank (same text) is skipped."""
+    have = {json.loads(r["question_json"])["question"]
+            for r in conn.execute("SELECT question_json FROM question_bank WHERE milestone_id = ?",
+                                  (milestone_id,))}
+    with conn:
+        for q in questions:
+            if q["question"] in have:
+                continue
+            conn.execute("INSERT INTO question_bank (milestone_id, concept, question_json, created_at)"
+                         " VALUES (?, ?, ?, ?)", (milestone_id, q["concept"], json.dumps(q), utc_now_iso()))
+            have.add(q["question"])
+
+
+def bank(conn, milestone_id: int, concept: str | None = None) -> list[dict]:
+    sql, args = "SELECT * FROM question_bank WHERE milestone_id = ?", [milestone_id]
+    if concept is not None:
+        sql, args = sql + " AND concept = ?", args + [concept]
+    rows = conn.execute(sql + " ORDER BY id", args).fetchall()
+    return [{**json.loads(r["question_json"]), "bank_id": r["id"], "concept": r["concept"],
+             "last_shown_at": r["last_shown_at"]} for r in rows]
+
+
+def bank_concepts(conn, milestone_id: int) -> list[str]:
+    rows = conn.execute("SELECT DISTINCT concept FROM question_bank WHERE milestone_id = ? ORDER BY concept",
+                        (milestone_id,)).fetchall()
+    return [r[0] for r in rows]
+
+
+def retag_bank(conn, tags: dict[int, str]):
+    """Set the concept of bank questions: {bank_id: concept}."""
+    with conn:
+        for bank_id, concept in tags.items():
+            row = conn.execute("SELECT question_json FROM question_bank WHERE id = ?", (bank_id,)).fetchone()
+            q = {**json.loads(row["question_json"]), "concept": concept}
+            conn.execute("UPDATE question_bank SET concept = ?, question_json = ? WHERE id = ?",
+                         (concept, json.dumps(q), bank_id))
+
+
+def mark_shown(conn, bank_id: int, when: str | None = None):
+    conn.execute("UPDATE question_bank SET last_shown_at = ? WHERE id = ?", (when or utc_now_iso(), bank_id))
+    conn.commit()
+
+
+# ---------- quiz attempts ----------
+
+def add_quiz_result(conn, milestone_id: int, score: float, passed: bool, details: dict) -> int:
+    cur = conn.execute("INSERT INTO quiz_results (milestone_id, score, passed, details_json, created_at)"
+                       " VALUES (?, ?, ?, ?, ?)",
+                       (milestone_id, score, int(passed), json.dumps(details), utc_now_iso()))
+    conn.commit()
+    return cur.lastrowid
+
+
+def quiz_results(conn, milestone_id: int) -> list[dict]:
+    rows = conn.execute("SELECT * FROM quiz_results WHERE milestone_id = ? ORDER BY id", (milestone_id,))
+    return [{**dict(r), "passed": bool(r["passed"]), "details": json.loads(r["details_json"] or "{}")}
+            for r in rows]
+
+
+# ---------- practical task ----------
+
+def save_task(conn, milestone_id: int, proof_type: str, instructions: str, rubric: list[dict],
+              screenshots: list[str]):
+    conn.execute(
+        "INSERT INTO tasks (milestone_id, proof_type, instructions, rubric_json, screenshots_json, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(milestone_id) DO UPDATE SET"
+        " proof_type = excluded.proof_type, instructions = excluded.instructions,"
+        " rubric_json = excluded.rubric_json, screenshots_json = excluded.screenshots_json,"
+        " created_at = excluded.created_at",
+        (milestone_id, proof_type, instructions, json.dumps(rubric), json.dumps(screenshots), utc_now_iso()))
+    conn.commit()
+
+
+def get_task(conn, milestone_id: int) -> dict | None:
+    r = conn.execute("SELECT * FROM tasks WHERE milestone_id = ?", (milestone_id,)).fetchone()
+    if r is None:
+        return None
+    return {"proof_type": r["proof_type"], "instructions": r["instructions"],
+            "rubric": json.loads(r["rubric_json"]), "screenshots": json.loads(r["screenshots_json"]),
+            "created_at": r["created_at"]}
+
+
+def add_submission(conn, milestone_id: int, text: str, images: list[tuple[str, bytes]],
+                   grades: list[dict] | None, error: str | None = None) -> int:
+    """images: [(media_type, bytes)]."""
+    with conn:
+        cur = conn.execute("INSERT INTO task_submissions (milestone_id, text, grades_json, error, created_at)"
+                           " VALUES (?, ?, ?, ?, ?)",
+                           (milestone_id, text, json.dumps(grades) if grades is not None else None,
+                            error, utc_now_iso()))
+        sid = cur.lastrowid
+        conn.executemany("INSERT INTO task_images (submission_id, idx, media_type, data) VALUES (?, ?, ?, ?)",
+                         [(sid, i, mt, data) for i, (mt, data) in enumerate(images)])
+    return sid
+
+
+def submissions(conn, milestone_id: int) -> list[dict]:
+    rows = conn.execute("SELECT s.*, (SELECT COUNT(*) FROM task_images i WHERE i.submission_id = s.id)"
+                        " AS n_images FROM task_submissions s WHERE milestone_id = ? ORDER BY id",
+                        (milestone_id,)).fetchall()
+    return [{**dict(r), "grades": json.loads(r["grades_json"]) if r["grades_json"] else None} for r in rows]
+
+
+def add_override(conn, milestone_id: int, item_id: str, old: str, new: str, reason: str):
+    conn.execute("INSERT INTO overrides (milestone_id, item_id, old_verdict, new_verdict, reason, created_at)"
+                 " VALUES (?, ?, ?, ?, ?, ?)", (milestone_id, item_id, old, new, reason, utc_now_iso()))
+    conn.commit()
+
+
+def overrides(conn, milestone_id: int) -> list[dict]:
+    rows = conn.execute("SELECT * FROM overrides WHERE milestone_id = ? ORDER BY id", (milestone_id,))
+    return [dict(r) for r in rows]
+
+
+# ---------- review cards ----------
+
+def get_card(conn, card_id: int):
+    return conn.execute("SELECT * FROM review_schedule WHERE id = ?", (card_id,)).fetchone()
+
+
+def find_card(conn, milestone_id: int, concept: str):
+    return conn.execute("SELECT * FROM review_schedule WHERE milestone_id = ? AND concept = ?",
+                        (milestone_id, concept)).fetchone()
+
+
+def add_card(conn, profile_id: int, milestone_id: int, concept: str, card_json: str, due_at: str) -> int:
+    cur = conn.execute("INSERT INTO review_schedule (profile_id, milestone_id, concept, due_at, card_json,"
+                       " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                       (profile_id, milestone_id, concept, due_at, card_json, utc_now_iso()))
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_card(conn, card_id: int, card_json: str, due_at: str):
+    conn.execute("UPDATE review_schedule SET card_json = ?, due_at = ? WHERE id = ?", (card_json, due_at, card_id))
+    conn.commit()
+
+
+def cards(conn, profile_id: int) -> list:
+    return conn.execute("SELECT * FROM review_schedule WHERE profile_id = ? ORDER BY due_at, id",
+                        (profile_id,)).fetchall()
+
+
+def due_cards(conn, profile_id: int, now_iso: str) -> list:
+    """Cards due by `now_iso` (UTC), most overdue first."""
+    return conn.execute("SELECT * FROM review_schedule WHERE profile_id = ? AND due_at <= ?"
+                        " ORDER BY due_at, id", (profile_id, now_iso)).fetchall()
+
+
+def add_review_log(conn, card_id: int, question_id: int | None, correct: bool, rating: str,
+                   source: str, card_before_json: str, when: str | None = None) -> int:
+    cur = conn.execute("INSERT INTO review_log (card_id, question_id, correct, rating, source,"
+                       " card_before_json, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       (card_id, question_id, int(correct), rating, source, card_before_json,
+                        when or utc_now_iso()))
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_review_log(conn, log_id: int):
+    return conn.execute("SELECT * FROM review_log WHERE id = ?", (log_id,)).fetchone()
+
+
+def last_review_log(conn, card_id: int):
+    return conn.execute("SELECT * FROM review_log WHERE card_id = ? ORDER BY id DESC LIMIT 1",
+                        (card_id,)).fetchone()
+
+
+def set_log_rating(conn, log_id: int, rating: str):
+    conn.execute("UPDATE review_log SET rating = ? WHERE id = ?", (rating, log_id))
+    conn.commit()
+
+
+def reviews_between(conn, profile_id: int, start_iso: str, end_iso: str, source: str | None = "review") -> list:
+    """Review log rows for this subject with start <= reviewed_at < end (UTC strings)."""
+    sql = ("SELECT l.*, c.concept, c.milestone_id FROM review_log l JOIN review_schedule c ON c.id = l.card_id"
+           " WHERE c.profile_id = ? AND l.reviewed_at >= ? AND l.reviewed_at < ?")
+    args = [profile_id, start_iso, end_iso]
+    if source is not None:
+        sql, args = sql + " AND l.source = ?", args + [source]
+    return conn.execute(sql + " ORDER BY l.id", args).fetchall()
+
+
+# ---------- study time ----------
+
+def log_study(conn, milestone_id: int, minutes: float):
+    conn.execute("INSERT INTO study_log (milestone_id, minutes, logged_at) VALUES (?, ?, ?)",
+                 (milestone_id, minutes, utc_now_iso()))
+    conn.commit()
+
+
+def study_minutes(conn, milestone_id: int) -> float:
+    return conn.execute("SELECT COALESCE(SUM(minutes), 0) FROM study_log WHERE milestone_id = ?",
+                        (milestone_id,)).fetchone()[0]

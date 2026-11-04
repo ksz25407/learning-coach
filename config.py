@@ -21,6 +21,9 @@ MODELS = {
     "pedagogy": SONNET,
     "examiner": HAIKU,  # minimal Examiner: drafts the quiz + answer key
     "quiz_solver": SONNET,  # switch to OPUS for stricter checking
+    # Phase 4
+    "examiner_task": HAIKU,  # writes the practical task + rubric
+    "grader": SONNET,  # grades the practical task (text + screenshots)
 }
 
 # How hard the model thinks: "low" | "medium" | "high" | "xhigh" | "max".
@@ -35,6 +38,8 @@ EFFORT = {
     "pedagogy": "medium",
     "examiner": "low",
     "quiz_solver": "medium",
+    "examiner_task": "low",
+    "grader": "medium",
 }
 
 MAX_TOKENS = {
@@ -48,6 +53,8 @@ MAX_TOKENS = {
     "pedagogy": 6000,
     "examiner": 6000,
     "quiz_solver": 6000,
+    "examiner_task": 6000,
+    "grader": 6000,
 }
 
 # USD per 1M tokens. cache_write = 1.25x input (5-minute cache), cache_read = 0.1x input.
@@ -133,6 +140,33 @@ QUIZ_DEFAULT_TOLERANCE_PCT = 1.0  # numeric answers, when the Examiner gives no 
 # Rough output tokens per call (thinking included), for cost estimates before real usage exists.
 EST_LESSON_TOKENS = 4000  # a lesson as input to the checkers
 EST_OUTPUT_TOKENS = {"fact_checker": 4000, "pedagogy": 2000, "examiner": 3000, "quiz_solver": 2000}
+
+# ---------- Phase 4: exam gate, progress, spaced review ----------
+
+# Your local time zone. Timestamps are stored in UTC; "today" and the daily review limit use this.
+TIMEZONE = "America/New_York"
+
+# Database backups made before a migration: keep only the newest ones.
+MAX_BACKUPS = 5
+
+# Exam gate. Quiz: this share of questions right. Task: every rubric item must pass.
+QUIZ_PASS_PCT = 0.8
+# "Pass with a reason" appears after this many task submissions that still had a
+# "can't tell" item (or when the grader keeps failing).
+MANUAL_PASS_AFTER = 2
+
+# Screenshots for the practical task. Bigger images are shrunk to this long edge first
+# (the API's limit for current models is 2,576 px; cost is about (w/28) x (h/28) tokens).
+IMAGE_MAX_PX = 2576
+IMAGE_MAX_COUNT = 6
+
+# Spaced review (py-fsrs): at most this many cards per subject per (local) day.
+REVIEW_DAILY_LIMIT = 15
+
+# Rough output tokens per grader call, for the cost shown on the submit button.
+EST_GRADER_INPUT_TOKENS = 6000  # task + rubric + your text + a few screenshots
+EST_OUTPUT_TOKENS["grader"] = 2000
+EST_OUTPUT_TOKENS["examiner_task"] = 2000
 
 # Fact-checker eval (evals/fact_check_eval.py). It refuses to start if this month's eval
 # spend + the run's worst-case cost would go over this.

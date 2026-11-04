@@ -6,3 +6,5 @@ pytest==9.2.0
 requests==2.34.2
 trafilatura==2.3.1
 pypdf==6.21.4
+fsrs==6.3.2
+tzdata==2026.6
