@@ -20,6 +20,21 @@ class SourceChunk:
     kind: SourceKind
     ref: str  # "manual.pdf p.47", a URL, or a model ID
     title: str = ""  # shown to the Teacher and in the Sources list (defaults to ref)
+    # Phase 5: a PDF page sent visually (Claude reads its text and an image of it). Files API
+    # id of the page as a 1-page PDF; "" = send `text` as a plain text document.
+    file_id: str = ""
+
+
+def document_source(chunk: SourceChunk) -> dict:
+    """The `source` of a document block: the uploaded 1-page PDF for a visual page, else text."""
+    if chunk.file_id:
+        return {"type": "file", "file_id": chunk.file_id}
+    return {"type": "text", "media_type": "text/plain", "data": chunk.text}
+
+
+# Put on the first block after the source documents: everything before it (system prompt,
+# profile, documents) is cached, so revision rounds and re-checks pay ~10% for the documents.
+CACHE_HERE = {"type": "ephemeral"}
 
 
 class LessonSource:

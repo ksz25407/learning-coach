@@ -61,8 +61,12 @@ class Coach:
         return pid
 
     def delete_subject(self, profile_id: int):
-        """Remove the subject's profile, plan, lessons and chat. Spend history is kept."""
+        """Remove the subject's profile, plan, lessons and chat. Spend history is kept.
+        PDF pages uploaded to the Files API are deleted there too."""
+        file_ids = store.pdf_file_ids(self.conn, profile_id=profile_id)
         store.delete_profile(self.conn, profile_id)
+        for file_id in file_ids:
+            self.llm.delete_file(file_id)
 
     def stage(self, profile_id: int) -> str:
         return store.get_profile(self.conn, profile_id)["stage"]
@@ -147,7 +151,7 @@ class Coach:
         else:
             resources = store.get_resources(self.conn, milestone_id)
 
-        pdf, web = PdfSource(self.conn, pid), WebSource(self.conn, resources)
+        pdf, web = self._pdf_source(pid), WebSource(self.conn, resources)
         result = teacher.write_lesson(self.llm, profile, dict(m), sources=[pdf, web], profile_id=pid)
 
         if new_resources is not None:
@@ -172,7 +176,7 @@ class Coach:
         chunks = []
         if notes is not None:  # Phase 2+ lesson: rebuild its sources
             resources = store.get_resources(self.conn, milestone_id)
-            chunks = teacher.gather_chunks([PdfSource(self.conn, pid), WebSource(self.conn, resources)],
+            chunks = teacher.gather_chunks([self._pdf_source(pid), WebSource(self.conn, resources)],
                                            m, profile)
         lesson = teacher.Lesson(text=row["content"], sources=json.loads(row["sources_json"]),
                                 citations=json.loads(row["citations_json"] or "[]"),
@@ -306,9 +310,20 @@ class Coach:
     # ---------- PDF sources ----------
 
     def upload_pdf(self, profile_id: int, filename: str, data: bytes, page_from=None, page_to=None) -> str:
-        """Store a PDF's text for this subject. Returns a warning ('' if all is fine)."""
-        _, warning = ingest_pdf(self.conn, profile_id, filename, data, page_from, page_to)
-        return warning
+        """Store a PDF for this subject. Returns a message on how its pages are sent ('' if none).
+        Nothing is uploaded to the API yet: a visual page is uploaded the first time a lesson uses it."""
+        _, message = ingest_pdf(self.conn, profile_id, filename, data, page_from, page_to)
+        return message
+
+    def delete_pdf(self, upload_id: int):
+        """Remove a PDF, and its pages from the Files API."""
+        file_ids = store.pdf_file_ids(self.conn, upload_id=upload_id)
+        store.delete_pdf(self.conn, upload_id)
+        for file_id in file_ids:
+            self.llm.delete_file(file_id)
+
+    def _pdf_source(self, profile_id: int) -> PdfSource:
+        return PdfSource(self.conn, profile_id, upload_file=self.llm.upload_file)
 
     # ---------- cost estimates ----------
 
@@ -355,15 +370,23 @@ class Coach:
             p = price_for(config.MODELS[agent])
             return (tokens_in * p["input"] + tokens_out * p["output"]) / 1e6
 
-        pdf_chars = sum(store.pdf_page_lengths(self.conn, profile_id)[: config.PDF_MAX_PAGES])
-        sources_in = pdf_chars / 4 + 2 * config.PAGE_MAX_TOKENS  # PDF pages + 2 web pages
+        # Source documents: the biggest PDF pages a lesson could get (visual pages count
+        # VISUAL_PAGE_TOKENS each) + 2 web pages. Priced as a cache write (1.25x input), the
+        # first call's price; later rounds read them from the cache for much less.
+        n_visual = min(store.pdf_visual_page_count(self.conn, profile_id), config.VISUAL_PDF_MAX_PAGES)
+        text_chars = sum(store.pdf_page_lengths(self.conn, profile_id)[: config.PDF_MAX_PAGES - n_visual])
+        sources_in = n_visual * config.VISUAL_PAGE_TOKENS + text_chars / 4 + 2 * config.PAGE_MAX_TOKENS
         lesson, out = config.EST_LESSON_TOKENS, config.EST_OUTPUT_TOKENS
+
+        def with_sources(agent, tokens_in, tokens_out):
+            p = price_for(config.MODELS[agent])
+            return cost(agent, tokens_in, tokens_out) + sources_in * p["cache_write"] / 1e6
         return {
             "curator_search": config.WEB_SEARCH_MAX_USES * config.WEB_SEARCH_USD
                               + cost("curator_search", config.EST_CURATOR_INPUT_TOKENS, config.MAX_TOKENS["curator"]),
             "curator": cost("curator", config.MAX_TOKENS["curator"], config.MAX_TOKENS["curator"]),
-            "teacher": cost("teacher", sources_in + lesson + 2000, config.EST_TEACHER_OUTPUT_TOKENS),
-            "fact_checker": cost("fact_checker", sources_in + lesson + 2000, out["fact_checker"]),
+            "teacher": with_sources("teacher", lesson + 2000, config.EST_TEACHER_OUTPUT_TOKENS),
+            "fact_checker": with_sources("fact_checker", lesson + 2000, out["fact_checker"]),
             "pedagogy": cost("pedagogy", lesson + 2000, out["pedagogy"]),
             "examiner": cost("examiner", lesson + 2000, out["examiner"]),
             "quiz_solver": cost("quiz_solver", lesson + 2000, out["quiz_solver"]),

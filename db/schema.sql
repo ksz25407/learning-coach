@@ -88,13 +88,16 @@ CREATE TABLE IF NOT EXISTS pdf_uploads (
     page_to      INTEGER,
     n_pages      INTEGER NOT NULL,
     n_text_pages INTEGER NOT NULL,                      -- pages with a real text layer
-    uploaded_at  TEXT NOT NULL
+    uploaded_at  TEXT NOT NULL,
+    data         BLOB                                   -- Phase 5: the PDF file (NULL = uploaded before Phase 5)
 );
 
 CREATE TABLE IF NOT EXISTS pdf_pages (
     upload_id INTEGER NOT NULL REFERENCES pdf_uploads(id),
     page_no   INTEGER NOT NULL,                         -- 1-based, as printed by PDF viewers
     text      TEXT NOT NULL,
+    kind      TEXT,                                     -- Phase 5: text | equations | figure | scanned (NULL = before Phase 5)
+    file_id   TEXT,                                     -- Phase 5: Files API id of this page as a 1-page PDF
     PRIMARY KEY (upload_id, page_no)
 );
 

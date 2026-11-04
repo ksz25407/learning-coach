@@ -21,6 +21,9 @@ NEW_COLUMNS = [
     ("milestones", "pass_method", "TEXT"),
     ("milestones", "pass_reason", "TEXT"),
     ("profiles", "deadline_date", "TEXT"),
+    ("pdf_uploads", "data", "BLOB"),
+    ("pdf_pages", "kind", "TEXT"),
+    ("pdf_pages", "file_id", "TEXT"),
 ]
 
 
@@ -341,24 +344,57 @@ def has_resources(conn, milestone_id: int) -> bool:
 # ---------- PDFs ----------
 
 def add_pdf(conn, profile_id: int, filename: str, pages: list[str], page_from, page_to,
-            n_text_pages: int) -> int:
+            n_text_pages: int, data: bytes | None = None, kinds: list[str] | None = None) -> int:
+    """`data`: the PDF file (needed to send pages visually). `kinds`: one per page
+    (text | equations | figure | scanned); by default a page is text or scanned by its length."""
+    if kinds is None:
+        kinds = ["text" if len(t) >= config.PDF_MIN_CHARS_PER_PAGE else "scanned" for t in pages]
     with conn:
         cur = conn.execute(
             "INSERT INTO pdf_uploads (profile_id, filename, page_from, page_to, n_pages, n_text_pages,"
-            " uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (profile_id, filename, page_from, page_to, len(pages), n_text_pages, now()),
+            " uploaded_at, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (profile_id, filename, page_from, page_to, len(pages), n_text_pages, now(), data),
         )
         upload_id = cur.lastrowid
         conn.executemany(
-            "INSERT INTO pdf_pages (upload_id, page_no, text) VALUES (?, ?, ?)",
-            [(upload_id, i, text) for i, text in enumerate(pages, start=1)],
+            "INSERT INTO pdf_pages (upload_id, page_no, text, kind) VALUES (?, ?, ?, ?)",
+            [(upload_id, i, text, kind) for i, (text, kind) in enumerate(zip(pages, kinds), start=1)],
         )
     return upload_id
 
 
+def get_pdf_data(conn, upload_id: int) -> bytes | None:
+    row = conn.execute("SELECT data FROM pdf_uploads WHERE id = ?", (upload_id,)).fetchone()
+    return row["data"] if row else None
+
+
+def set_page_file_id(conn, upload_id: int, page_no: int, file_id: str):
+    with conn:
+        conn.execute("UPDATE pdf_pages SET file_id = ? WHERE upload_id = ? AND page_no = ?",
+                     (file_id, upload_id, page_no))
+
+
+def pdf_file_ids(conn, profile_id: int | None = None, upload_id: int | None = None) -> list[str]:
+    """Files API ids of uploaded pages, for one subject or one PDF (to delete them there too)."""
+    sql = ("SELECT p.file_id FROM pdf_pages p JOIN pdf_uploads u ON u.id = p.upload_id"
+           " WHERE p.file_id IS NOT NULL")
+    if upload_id is not None:
+        return [r[0] for r in conn.execute(sql + " AND u.id = ?", (upload_id,))]
+    return [r[0] for r in conn.execute(sql + " AND u.profile_id = ?", (profile_id,))]
+
+
+def pdf_page_kinds(conn, upload_id: int) -> dict[str, int]:
+    """How many pages of each kind an upload has, e.g. {"text": 12, "equations": 5}."""
+    rows = conn.execute("SELECT COALESCE(kind, 'text') AS k, COUNT(*) FROM pdf_pages WHERE upload_id = ?"
+                        " GROUP BY k", (upload_id,)).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
 def list_pdfs(conn, profile_id: int):
+    """Uploads without the file itself (get_pdf_data reads that); has_data = 1 if it is stored."""
     return conn.execute(
-        "SELECT * FROM pdf_uploads WHERE profile_id = ? ORDER BY id", (profile_id,)
+        "SELECT id, profile_id, filename, page_from, page_to, n_pages, n_text_pages, uploaded_at,"
+        " data IS NOT NULL AS has_data FROM pdf_uploads WHERE profile_id = ? ORDER BY id", (profile_id,)
     ).fetchall()
 
 
@@ -370,7 +406,7 @@ def delete_pdf(conn, upload_id: int):
 
 def get_pdf_pages(conn, upload_id: int):
     """Pages inside the upload's optional page range."""
-    u = conn.execute("SELECT * FROM pdf_uploads WHERE id = ?", (upload_id,)).fetchone()
+    u = conn.execute("SELECT page_from, page_to, n_pages FROM pdf_uploads WHERE id = ?", (upload_id,)).fetchone()
     lo = u["page_from"] or 1
     hi = u["page_to"] or u["n_pages"]
     return conn.execute(
@@ -428,6 +464,14 @@ def pdf_page_lengths(conn, profile_id: int) -> list[int]:
         " WHERE u.profile_id = ? ORDER BY LENGTH(p.text) DESC", (profile_id,)
     ).fetchall()
     return [r[0] for r in rows]
+
+
+def pdf_visual_page_count(conn, profile_id: int) -> int:
+    """Pages that would be sent visually (not plain text, and the PDF file is stored)."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM pdf_pages p JOIN pdf_uploads u ON u.id = p.upload_id"
+        " WHERE u.profile_id = ? AND u.data IS NOT NULL AND COALESCE(p.kind, 'text') != 'text'",
+        (profile_id,)).fetchone()[0]
 
 
 def recent_avg_cost(conn, agent: str, n: int) -> tuple[float, int]:

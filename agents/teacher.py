@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 from agents import formatting
 from checks import SOURCES_LIST
-from sources.base import PRIORITY, ModelKnowledgeSource, SourceChunk, gather
+from sources.base import CACHE_HERE, PRIORITY, ModelKnowledgeSource, SourceChunk, document_source, gather
 
 SYSTEM = """You are the Teacher in a personal learning app. Write ONE lesson that gets the
 learner to pass the milestone objective. Use the subject profile to match their level,
@@ -77,7 +77,7 @@ class Lesson:
 def document_block(chunk: SourceChunk) -> dict:
     return {
         "type": "document",
-        "source": {"type": "text", "media_type": "text/plain", "data": chunk.text},
+        "source": document_source(chunk),
         "title": chunk.title or chunk.ref,
         "context": f"Source kind: {chunk.kind}. Reference: {chunk.ref}",
         "citations": {"enabled": True},
@@ -159,11 +159,14 @@ def write_lesson(llm, profile: dict, milestone: dict, sources=None, profile_id=N
     if chunks is None:
         chunks = gather_chunks(sources, milestone, profile)
 
-    request = f"Milestone: {milestone['title']}\nObjective: {milestone['objective']}"
+    # The documents + milestone are the same in every revision round, so they end the cached
+    # prefix; the previous draft and feedback come after, in their own block.
+    content = [document_block(c) for c in chunks] + [
+        {"type": "text", "text": f"Milestone: {milestone['title']}\nObjective: {milestone['objective']}",
+         "cache_control": CACHE_HERE}]
     if previous is not None:
-        request += (f"\n\nPREVIOUS DRAFT:\n{previous}\n\nREVIEWER FEEDBACK (fix every point):\n"
-                    f"{feedback}\n\nWrite the full corrected lesson.")
-    content = [document_block(c) for c in chunks] + [{"type": "text", "text": request}]
+        content.append({"type": "text", "text": f"PREVIOUS DRAFT:\n{previous}\n\nREVIEWER FEEDBACK (fix every "
+                                                f"point):\n{feedback}\n\nWrite the full corrected lesson."})
     blocks, model = llm.call_raw("teacher", SYSTEM, [{"role": "user", "content": content}],
                                  profile=profile, profile_id=profile_id)
 

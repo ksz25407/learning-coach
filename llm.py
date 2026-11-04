@@ -117,6 +117,25 @@ class LLM:
             kwargs["messages"] = list(messages) + [{"role": "assistant", "content": blocks}]
         raise LLMError(f"{agent}: still paused after {config.PAUSE_TURN_MAX_ROUNDS} rounds.")
 
+    # --- Files API (Phase 5: visual PDF pages) ---
+
+    def upload_file(self, filename: str, data: bytes, media_type: str = "application/pdf") -> str:
+        """Upload a file once; later requests refer to it by id instead of resending it.
+        Uploading is free (the file's tokens are billed when a request uses it)."""
+        try:
+            return self.client.files.upload(file=(filename, data, media_type)).id
+        except Exception as e:  # network or API error: same handling as a failed call
+            raise LLMError(f"Couldn't upload {filename} to the Files API: {e}") from e
+
+    def delete_file(self, file_id: str) -> bool:
+        """Delete an uploaded file. Never raises: a file that can't be deleted is only logged."""
+        try:
+            self.client.files.delete(file_id)
+            return True
+        except Exception as e:
+            log.warning("Couldn't delete file %s: %s", file_id, e)
+            return False
+
     # --- internals ---
 
     def _build(self, agent, system, messages, profile, extra):
@@ -141,16 +160,19 @@ class LLM:
         return kwargs
 
     def _check_size(self, kwargs):
-        rough = len(json.dumps(kwargs["system"])) + len(json.dumps(kwargs["messages"]))
-        if rough / 4 < config.TOKEN_COUNT_THRESHOLD:
+        """Count tokens first if the prompt looks large. count_tokens can't read Files API
+        documents, so those are left out of the count and VISUAL_PAGE_TOKENS is added per file."""
+        messages, n_files = without_file_documents(kwargs["messages"])
+        extra = n_files * config.VISUAL_PAGE_TOKENS
+        rough = (len(json.dumps(kwargs["system"])) + len(json.dumps(messages))) / 4 + extra
+        if rough < config.TOKEN_COUNT_THRESHOLD:
             return
         count = self.client.messages.count_tokens(
-            model=kwargs["model"], system=kwargs["system"], messages=kwargs["messages"]
+            model=kwargs["model"], system=kwargs["system"], messages=messages
         )
-        if count.input_tokens > config.MAX_INPUT_TOKENS:
-            raise LLMError(
-                f"Prompt is {count.input_tokens} tokens (limit {config.MAX_INPUT_TOKENS}). Not sent."
-            )
+        total = count.input_tokens + extra
+        if total > config.MAX_INPUT_TOKENS:
+            raise LLMError(f"Prompt is about {total} tokens (limit {config.MAX_INPUT_TOKENS}). Not sent.")
 
     def _finish(self, agent, response, profile_id):
         u = response.usage
@@ -173,6 +195,20 @@ class LLM:
             cache_read_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
             cost_usd=compute_cost(response.model, u),
         )
+
+
+def without_file_documents(messages: list[dict]) -> tuple[list[dict], int]:
+    """(messages without Files API document blocks, how many were removed)."""
+    out, n = [], 0
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            kept = [b for b in content if not (isinstance(b, dict) and b.get("type") == "document"
+                                              and b.get("source", {}).get("type") == "file")]
+            n += len(content) - len(kept)
+            m = {**m, "content": kept or [{"type": "text", "text": "(documents)"}]}
+        out.append(m)
+    return out, n
 
 
 def system_blocks(system: str, profile: dict | None, extra: str | None = None) -> list[dict]:

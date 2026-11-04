@@ -107,6 +107,20 @@ BLOCKED_DOMAINS = [
 PDF_MAX_PAGES = 15  # pages sent to the Teacher per lesson
 PDF_MIN_CHARS_PER_PAGE = 100  # less text than this = probably a scanned page
 
+# Phase 5: visual PDF pages. Pages with equations, figures or no text layer are sent to Claude
+# as PDF pages (Claude reads each page's text AND an image of it), uploaded once via the
+# Files API. They cost more, so they have their own cap within PDF_MAX_PAGES. A page over the
+# cap is sent as extracted text instead (or skipped if it has none).
+VISUAL_PDF_MAX_PAGES = 8
+# Rough tokens per visual page, for cost estimates and the size check (count_tokens can't count
+# Files API documents). The docs give 1,500-3,000 text tokens per page plus the page image
+# (about (w/28) x (h/28) tokens), so this is kept on the high side.
+VISUAL_PAGE_TOKENS = 4500
+# A page counts as "equations" (sent visually) when its extracted text has at least this many
+# maths symbols or '=' signs, or this share of very short lines (garbled fractions, figure labels).
+PDF_MATH_MIN_SYMBOLS = 3
+PDF_SHORT_LINE_SHARE = 0.2
+
 # Curator resources longer than this (minutes) are flagged.
 LONG_RESOURCE_MIN = 30
 

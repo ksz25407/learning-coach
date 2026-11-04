@@ -2,18 +2,29 @@
 import requests
 
 
-def make_pdf(pages: list[str]) -> bytes:
-    """Build a minimal valid PDF with one line of text per page ('' = page without text)."""
+def make_pdf(pages: list[str], image_pages: tuple[int, ...] = ()) -> bytes:
+    """Build a minimal valid PDF with text per page ('' = page without text). Each line of a
+    page's text becomes its own line in the PDF. Pages in `image_pages` (1-based) also get a
+    tiny embedded image, like a figure."""
     objs = ["<< /Type /Catalog /Pages 2 0 R >>", None,
-            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray "
+            "/BitsPerComponent 8 /Length 1 >>\nstream\n\x80\nendstream"]  # object 4: the image
     kids = []
-    for text in pages:
-        safe = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-        stream = f"BT /F1 10 Tf 20 700 Td ({safe}) Tj ET" if text else ""
+    for page_no, text in enumerate(pages, start=1):
+        lines = []
+        for i, line in enumerate(text.split("\n") if text else []):
+            safe = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+            lines.append(f"BT /F1 10 Tf 20 {700 - 14 * i} Td ({safe}) Tj ET")
+        image = page_no in image_pages
+        if image:
+            lines.append("q 100 0 0 100 300 300 cm /Im1 Do Q")
+        stream = "\n".join(lines)
         objs.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
         content_no = len(objs)
+        xobject = " /XObject << /Im1 4 0 R >>" if image else ""
         objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-                    f"/Resources << /Font << /F1 3 0 R >> >> /Contents {content_no} 0 R >>")
+                    f"/Resources << /Font << /F1 3 0 R >>{xobject} >> /Contents {content_no} 0 R >>")
         kids.append(f"{len(objs)} 0 R")
     objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(pages)} >>"
 

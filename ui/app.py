@@ -401,12 +401,22 @@ with st.sidebar:
                 rng = ""
                 if up["page_from"] or up["page_to"]:
                     rng = f", pages {up['page_from'] or 1}-{up['page_to'] or up['n_pages']}"
-                c1.caption(f"{up['filename']}: {up['n_text_pages']} text pages{rng}")
+                if up["has_data"]:
+                    kinds = store.pdf_page_kinds(conn, up["id"])
+                    n_vis = sum(kinds.get(k, 0) for k in ("equations", "figure", "scanned"))
+                    detail = f"{up['n_pages']} pages, {n_vis} sent as images"
+                else:  # uploaded before Phase 5: only its text was kept
+                    detail = (f"{up['n_text_pages']} text pages (text only: re-upload to send equations "
+                              "and figures as images)")
+                c1.caption(f"{up['filename']}: {detail}{rng}")
                 if c2.button("", key=f"rmpdf{up['id']}", icon=":material/delete:", help="Remove this PDF"):
-                    store.delete_pdf(conn, up["id"])
+                    run_safely(coach.delete_pdf, up["id"])
                     st.rerun()
             with st.form("pdf_upload", clear_on_submit=True):
-                pdf_file = st.file_uploader("Add a PDF", type="pdf")
+                pdf_file = st.file_uploader(
+                    "Add a PDF", type="pdf",
+                    help=f"Pages with equations, figures or no text (scans, handwriting) are sent to Claude as "
+                         f"images, at most {config.VISUAL_PDF_MAX_PAGES} per lesson; the rest as text.")
                 c1, c2 = st.columns(2)
                 p_from = c1.number_input("From page", min_value=1, value=None, step=1,
                                          help="Optional: only search these pages")
@@ -629,7 +639,9 @@ elif stage == "learning":
                 for n in notes.get("pdf", []):
                     if n["type"] == "pdf_pages":
                         used_any = True
-                        st.markdown(f"PDF **{n['file']}**: pages {', '.join(map(str, n['pages']))}")
+                        visual = n.get("visual_pages") or []  # older lessons have no such field
+                        as_images = f" (as images: {', '.join(map(str, visual))})" if visual else ""
+                        st.markdown(f"PDF **{n['file']}**: pages {', '.join(map(str, n['pages']))}{as_images}")
                     else:
                         st.markdown(f"PDF: {n['reason']}")
                 for n in notes.get("web", []):

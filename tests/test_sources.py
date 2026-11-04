@@ -52,7 +52,7 @@ def test_pdf_picks_matching_pages_in_page_order(conn, pid):
     chunks = src.get_chunks("Walls: draw the ground-floor wall types", {})
     assert [c.ref for c in chunks] == ["manual.pdf p.2", "manual.pdf p.4"]
     assert all(c.kind == "pdf" for c in chunks)
-    assert src.notes == [{"type": "pdf_pages", "file": "manual.pdf", "pages": [2, 4]}]
+    assert src.notes == [{"type": "pdf_pages", "file": "manual.pdf", "pages": [2, 4], "visual_pages": []}]
 
 
 def test_pdf_page_cap(conn, pid):
@@ -74,17 +74,19 @@ def test_pdf_no_match_is_noted(conn, pid):
     assert src.notes[0]["type"] == "pdf_no_match"
 
 
-def test_scanned_pdf_is_not_saved(conn, pid):
-    upload_id, warning = ingest_pdf(conn, pid, "scan.pdf", make_pdf(["", "", ""]))
-    assert upload_id is None
-    assert "scanned" in warning
-    assert store.list_pdfs(conn, pid) == []
+def test_scanned_pdf_is_saved_and_picked_by_page_range(conn, pid):
+    # Phase 5: a scan can be sent as images, so it is kept; with no text, page order decides.
+    upload_id, msg = ingest_pdf(conn, pid, "scan.pdf", make_pdf(["", "", ""]))
+    assert upload_id is not None and store.get_pdf_data(conn, upload_id)
+    assert "3 of 3 pages" in msg and "Set a tight page range" in msg
+    assert store.pdf_page_kinds(conn, upload_id) == {"scanned": 3}
 
 
-def test_mostly_scanned_pdf_warns(conn, pid):
-    upload_id, warning = ingest_pdf(conn, pid, "mixed.pdf", make_pdf([WALLS, "", "", ""]))
+def test_mostly_scanned_pdf_explains_how_pages_are_sent(conn, pid):
+    upload_id, msg = ingest_pdf(conn, pid, "mixed.pdf", make_pdf([WALLS, "", "", ""]))
     assert upload_id is not None
-    assert "only 1 of 4 pages" in warning
+    assert "3 of 4 pages" in msg and "sent to Claude as images" in msg
+    assert "3 scanned page(s) are picked when the text pages around them match" in msg
 
 
 def test_backwards_page_range_rejected(conn, pid):
