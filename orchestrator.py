@@ -139,8 +139,21 @@ class Coach:
         _, warning = ingest_pdf(self.conn, profile_id, filename, data, page_from, page_to)
         return warning
 
+    LESSON_AGENTS = ("curator_search", "curator", "teacher")  # one call each per lesson
+
     def estimate_lesson_cost(self, profile_id: int) -> float:
-        """Rough upper estimate (USD) for one Curator + Teacher run."""
+        """Estimated cost (USD) of one Curator + Teacher run, kept a bit high.
+
+        With at least EST_MIN_LESSONS past lessons: average real cost of each agent's recent
+        calls (from usage_log) x EST_SAFETY_FACTOR. Before that: the rough formula.
+        """
+        history = [store.recent_avg_cost(self.conn, a, config.EST_SAMPLE_CALLS) for a in self.LESSON_AGENTS]
+        if all(n >= config.EST_MIN_LESSONS for _, n in history):
+            return sum(avg for avg, _ in history) * config.EST_SAFETY_FACTOR
+        return self._formula_estimate(profile_id)
+
+    def _formula_estimate(self, profile_id: int) -> float:
+        """Rough upper estimate from config limits, used until real usage exists."""
         haiku, teacher_p = price_for(config.MODELS["curator"]), price_for(config.MODELS["teacher"])
         curator_cost = (config.WEB_SEARCH_MAX_USES * config.WEB_SEARCH_USD
                         + config.EST_CURATOR_INPUT_TOKENS * haiku["input"] / 1e6

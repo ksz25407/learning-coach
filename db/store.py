@@ -322,3 +322,12 @@ def pdf_page_lengths(conn, profile_id: int) -> list[int]:
         " WHERE u.profile_id = ? ORDER BY LENGTH(p.text) DESC", (profile_id,)
     ).fetchall()
     return [r[0] for r in rows]
+
+
+def recent_avg_cost(conn, agent: str, n: int) -> tuple[float, int]:
+    """Average cost of the agent's last n calls, and how many calls that was."""
+    row = conn.execute(
+        "SELECT AVG(cost_usd), COUNT(*) FROM"
+        " (SELECT cost_usd FROM usage_log WHERE agent = ? ORDER BY id DESC LIMIT ?)", (agent, n)
+    ).fetchone()
+    return (row[0] or 0.0), row[1]

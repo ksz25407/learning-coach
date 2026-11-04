@@ -74,3 +74,18 @@ def test_backup_promoted_when_no_primary_left():
 @pytest.mark.parametrize("minutes,flag", [(30, False), (31, True), (None, False)])
 def test_long_resources_flagged(minutes, flag):
     assert is_long({"minutes": minutes}) is flag
+
+
+def test_curator_told_about_blocked_sites(llm, fake, monkeypatch):
+    monkeypatch.setattr(config, "BLOCKED_DOMAINS", ["autodesk.com/learn"])
+    fake.messages.text_replies = [reply(text("x"), search_results(FOUND))]
+    fake.messages.parse_replies = [CuratorDraft(resources=[r("https://docs.example.com/walls")])]
+    find_resources(llm, PROFILE, MILESTONE)
+    for _, call in fake.messages.calls:
+        assert "autodesk.com/learn" in call["system"][0]["text"]
+
+
+def test_no_blocked_note_when_list_empty(monkeypatch):
+    from agents.curator import SEARCH_SYSTEM, with_blocked_note
+    monkeypatch.setattr(config, "BLOCKED_DOMAINS", [])
+    assert with_blocked_note(SEARCH_SYSTEM) == SEARCH_SYSTEM

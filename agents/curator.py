@@ -39,6 +39,16 @@ section/page numbers/timestamps, estimated minutes, and why it beats the alterna
 """
 
 
+def with_blocked_note(system: str) -> str:
+    """Add the list of sites that refuse downloads, so the Curator prefers other sources."""
+    if not config.BLOCKED_DOMAINS:
+        return system
+    sites = ", ".join(config.BLOCKED_DOMAINS)
+    return (system + f"\nThese sites can't be downloaded by the app: {sites}. Prefer other sources. "
+            "Only use them if nothing comparable exists elsewhere, and then as a backup, never as "
+            "the only text page.\n")
+
+
 # Shape sent to the API.
 class ResourceDraft(BaseModel):
     url: str
@@ -100,7 +110,8 @@ def find_resources(llm, profile: dict, milestone: dict, profile_id=None) -> tupl
     request = (f"Milestone: {milestone['title']}\nObjective: {milestone['objective']}\n"
                "Find the best resources for this objective.")
     tool = {"type": config.WEB_SEARCH_TOOL, "name": "web_search", "max_uses": config.WEB_SEARCH_MAX_USES}
-    blocks, _ = llm.call_raw("curator_search", SEARCH_SYSTEM, [{"role": "user", "content": request}],
+    blocks, _ = llm.call_raw("curator_search", with_blocked_note(SEARCH_SYSTEM),
+                             [{"role": "user", "content": request}],
                              tools=[tool], profile=profile, profile_id=profile_id)
     found, notes, errors = search_results(blocks)
     info = {"search_errors": errors, "dropped_urls": [], "found": len(found)}
@@ -109,7 +120,8 @@ def find_resources(llm, profile: dict, milestone: dict, profile_id=None) -> tupl
 
     url_list = "\n".join(f"- {u} ({t})" for u, t in found.items())
     pick_request = f"{request}\n\nSEARCH NOTES:\n{notes}\n\nFOUND URLS:\n{url_list}"
-    draft = llm.call_structured("curator", PICK_SYSTEM, [{"role": "user", "content": pick_request}],
+    draft = llm.call_structured("curator", with_blocked_note(PICK_SYSTEM),
+                                [{"role": "user", "content": pick_request}],
                                 CuratorDraft, profile=profile, profile_id=profile_id)
     resources, dropped = check_resources(draft, found)
     info["dropped_urls"] = dropped

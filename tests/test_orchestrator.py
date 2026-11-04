@@ -250,3 +250,34 @@ def test_delete_subject_removes_pdfs_and_resources_keeps_web_cache(coach, fake, 
     assert count(conn, "pdf_uploads") == 0 and count(conn, "pdf_pages") == 0
     assert count(conn, "resources") == 0
     assert count(conn, "web_pages") == 1  # shared cache kept
+
+
+def log_lessons(conn, costs):
+    """Pretend lessons were made: one call per lesson agent, with the given (search, pick, teacher) costs."""
+    for search, pick, teach in costs:
+        store.log_usage(conn, None, "curator_search", "m", 1, 1, 0, 0, search)
+        store.log_usage(conn, None, "curator", "m", 1, 1, 0, 0, pick)
+        store.log_usage(conn, None, "teacher", "m", 1, 1, 0, 0, teach)
+
+
+def test_estimate_uses_formula_until_enough_lessons(coach, conn):
+    pid = store.create_profile(conn)
+    formula = coach._formula_estimate(pid)
+    log_lessons(conn, [(0.02, 0.001, 0.03)] * (config.EST_MIN_LESSONS - 1))
+    assert coach.estimate_lesson_cost(pid) == pytest.approx(formula)
+
+
+def test_estimate_uses_real_averages_kept_high(coach, conn):
+    pid = store.create_profile(conn)
+    log_lessons(conn, [(0.02, 0.001, 0.03), (0.03, 0.001, 0.05), (0.025, 0.001, 0.04)])
+    expected = (0.025 + 0.001 + 0.04) * config.EST_SAFETY_FACTOR
+    assert coach.estimate_lesson_cost(pid) == pytest.approx(expected)
+    assert coach.estimate_lesson_cost(pid) > 0.025 + 0.001 + 0.04  # a bit above the real average
+
+
+def test_estimate_uses_only_recent_calls(coach, conn, monkeypatch):
+    monkeypatch.setattr(config, "EST_SAMPLE_CALLS", 3)
+    pid = store.create_profile(conn)
+    log_lessons(conn, [(1.0, 1.0, 1.0)] * 5)  # old, expensive
+    log_lessons(conn, [(0.01, 0.01, 0.01)] * 3)  # recent
+    assert coach.estimate_lesson_cost(pid) == pytest.approx(0.03 * config.EST_SAFETY_FACTOR)

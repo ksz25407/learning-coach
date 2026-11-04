@@ -81,6 +81,13 @@ FETCH_USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 MAX_DOWNLOAD_BYTES = 5_000_000  # abort bigger downloads as "too large"
 WEB_CACHE_MAX_DAYS = 30  # cached pages older than this are downloaded again
 
+# Sites that refuse downloads (e.g. HTTP 403). The Curator is told to prefer other sources,
+# and the app never tries to download them. Entry = domain, optionally with a path prefix:
+# "autodesk.com/learn" matches www.autodesk.com/learn/... but not help.autodesk.com.
+BLOCKED_DOMAINS = [
+    "autodesk.com/learn",
+]
+
 # Uploaded PDFs.
 PDF_MAX_PAGES = 15  # pages sent to the Teacher per lesson
 PDF_MIN_CHARS_PER_PAGE = 100  # less text than this = probably a scanned page
@@ -88,7 +95,12 @@ PDF_MIN_CHARS_PER_PAGE = 100  # less text than this = probably a scanned page
 # Curator resources longer than this (minutes) are flagged.
 LONG_RESOURCE_MIN = 30
 
-# Rough cost estimate for one lesson (shown next to Regenerate).
+# Cost estimate for one lesson (shown next to Regenerate). Once EST_MIN_LESSONS lessons exist,
+# it uses the average real cost of the last EST_SAMPLE_CALLS calls per agent, times
+# EST_SAFETY_FACTOR (kept a bit high). Before that, the rough formula below is used.
+EST_MIN_LESSONS = 3
+EST_SAMPLE_CALLS = 20
+EST_SAFETY_FACTOR = 1.25
 EST_TEACHER_OUTPUT_TOKENS = 8000  # includes thinking tokens
 EST_CURATOR_INPUT_TOKENS = 40000  # search results read by the Curator (Haiku, cheap)
 

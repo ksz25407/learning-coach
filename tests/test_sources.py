@@ -214,3 +214,33 @@ def test_all_pages_fail_gives_no_chunks(conn, http):
     src = WebSource(conn, [res("https://a.com/1"), res("https://a.com/2", role="backup")])
     assert src.get_chunks("walls", {}) == []
     assert len([n for n in src.notes if n["type"] == "web_skipped"]) == 2
+
+
+# ---------- blocked domains ----------
+
+@pytest.mark.parametrize("url,blocked", [
+    ("https://www.autodesk.com/learn/ondemand/tutorial/walls", True),
+    ("https://autodesk.com/learn", True),
+    ("https://help.autodesk.com/cloudhelp/2025/walls.htm", False),  # same company, works fine
+    ("https://www.autodesk.com/products/revit", False),  # outside the /learn path
+    ("https://notautodesk.com/learn/x", False),  # different domain that merely ends the same
+])
+def test_is_blocked(url, blocked, monkeypatch):
+    monkeypatch.setattr(config, "BLOCKED_DOMAINS", ["autodesk.com/learn"])
+    assert web.is_blocked(url) is blocked
+
+
+def test_whole_domain_entry(monkeypatch):
+    monkeypatch.setattr(config, "BLOCKED_DOMAINS", ["example.org"])
+    assert web.is_blocked("https://docs.example.org/anything")
+
+
+def test_blocked_site_skipped_without_trying(conn, http, monkeypatch):
+    monkeypatch.setattr(config, "BLOCKED_DOMAINS", ["autodesk.com/learn"])
+    blocked = "https://www.autodesk.com/learn/walls"
+    http.pages["https://a.com/backup"] = FakeResponse(article_html("Backup page"))
+    src = WebSource(conn, [res(blocked), res("https://a.com/backup", role="backup")])
+    chunks = src.get_chunks("walls", {})
+    assert blocked not in http.calls  # never downloaded
+    assert [c.ref for c in chunks] == ["https://a.com/backup"]
+    assert any(n["url"] == blocked and "blocks downloads" in n["reason"] for n in src.notes)

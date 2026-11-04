@@ -52,10 +52,13 @@ Tests use a fake API client, so they cost nothing.
   Videos are shown under *Recommended resources* but not taught from. The app downloads
   pages itself (15 s timeout, max 5 MB, text capped at 8K tokens) and caches them for 30 days.
   A page that fails is replaced by a backup; *What this lesson used* lists skipped URLs and why.
+  Sites that refuse downloads go in `BLOCKED_DOMAINS` in `config.py` (e.g. `autodesk.com/learn`):
+  the Curator prefers other sources and the app never tries to download them.
 - **Priority**: PDF beats web, web beats model knowledge. Every section is labeled with the
   sources it actually cites, e.g. `[Source: pdf, web]`, and the numbers `[1]` point to the
   Sources list at the end of the lesson.
-- **Regenerate**: re-runs Curator + Teacher (estimated cost on the button). The old lesson stays
+- **Regenerate**: re-runs Curator + Teacher. The cost on the button comes from your real average
+  lesson cost × 1.25 once 3 lessons exist (a rough upper formula before that). The old lesson stays
   until the new one is ready. Lessons written before Phase 2 or before your newest PDF upload
   show an **Outdated** badge.
 - **Cost**: web search is $10 per 1,000 searches (max 5 per lesson), counted in the monthly

@@ -9,6 +9,7 @@
 """
 import io
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 import requests
 import trafilatura
@@ -24,6 +25,19 @@ TEXT_KINDS = ("page", "pdf")  # resource kinds we can download and teach from
 
 class FetchError(Exception):
     """A page could not be used. The message is the reason shown in the UI."""
+
+
+def is_blocked(url: str) -> bool:
+    """True if the URL is on a site listed in config.BLOCKED_DOMAINS."""
+    parts = urlparse(url)
+    host = (parts.hostname or "").lower()
+    path = parts.path or "/"
+    for entry in config.BLOCKED_DOMAINS:
+        domain, _, prefix = entry.lower().partition("/")
+        host_ok = host == domain or host.endswith("." + domain)
+        if host_ok and (not prefix or path.lower().startswith("/" + prefix)):
+            return True
+    return False
 
 
 def _is_fresh(fetched_at: str) -> bool:
@@ -108,6 +122,10 @@ class WebSource(LessonSource):
         for r in candidates:
             if len(chunks) >= want:
                 break
+            if is_blocked(r["url"]):
+                self.notes.append({"type": "web_skipped", "url": r["url"],
+                                   "reason": "site blocks downloads (BLOCKED_DOMAINS in config.py), not tried"})
+                continue
             try:
                 text = fetch_text(self.conn, r["url"])
             except FetchError as e:
