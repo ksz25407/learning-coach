@@ -303,6 +303,45 @@ def answers_match(question: dict, given: str) -> bool:
     return rule is not None and rule(question, given)
 
 
+# ---------- Phase 5: verifying a solved problem's answer key ----------
+
+def _quantity_key(name: str) -> str:
+    """'V_{th}', 'Vth', '$V_th$' -> 'vth'."""
+    return re.sub(r"[\s_{}$\\]", "", name or "").lower()
+
+
+def compare_key(rubric: list[dict], solution: dict) -> list[dict]:
+    """Compare each final-value rubric item with the blind solver's value for it.
+    Returns [{"id", "quantity", "key", "solver", "match"}] ("solver" is None if it gave none)."""
+    given = {_quantity_key(q): v for q, v in solution.get("values", {}).items()}
+    out = []
+    for r in rubric:
+        if r.get("kind") != "value":
+            continue
+        key = f"{r['value']} {r['unit']}".strip()
+        got = given.get(_quantity_key(r["quantity"]))
+        tol = r.get("tolerance_pct") or config.TASK_DEFAULT_TOLERANCE_PCT
+        out.append({"id": r["id"], "quantity": r["quantity"], "key": key, "solver": got,
+                    "match": got is not None and numbers_match(key, got, r["unit"], tol)})
+    return out
+
+
+def key_problems(comparison: list[dict], solution: dict) -> list[str]:
+    """What to tell the Examiner when the blind solver doesn't confirm the key ([] = verified).
+    It isn't told who is right: the key, the problem statement, or both may be wrong."""
+    problems = []
+    if solution.get("ambiguous"):
+        problems.append(f"a blind solver found the problem ambiguous or incomplete: {solution.get('note') or '(no reason)'}")
+    for c in comparison:
+        if c["solver"] is None:
+            problems.append(f"a blind solver could not give a value for {c['quantity']}; make sure the task asks "
+                            f"for it by that name and gives everything needed")
+        elif not c["match"]:
+            problems.append(f"a blind solver got {c['quantity']} = {c['solver']}, but your key says {c['key']}; "
+                            f"recheck the calculation and that the problem states every value and assumption")
+    return problems
+
+
 # ---------- Phase 4: exam gate ----------
 
 def grade_quiz(questions: list[dict], answers: dict[str, str]) -> tuple[float | None, list[dict]]:

@@ -57,6 +57,7 @@ AGENT_MARKERS = {
     "examiner_task": "You are the Task examiner",
     "concept_tagger": "You are the Concept tagger",
     "grader": "You are the Grader",
+    "task_solver": "You are the Task solver",
 }
 
 
@@ -128,10 +129,12 @@ def mc(question="Which tool draws walls?", answer="A", choices=("Wall", "Floor",
 
 
 def task_draft(n_items=3, screenshots=("floor plan with dimensions",)):
-    """An Examiner practical task."""
+    """An Examiner practical task (every rubric item a plain "check")."""
     from agents.examiner import RubricItem, Task
     return Task(instructions="Model the ground floor walls.",
-                rubric=[RubricItem(criterion=f"Item {i}", evidence=f"visible thing {i}") for i in range(1, n_items + 1)],
+                rubric=[RubricItem(kind="check", criterion=f"Item {i}", evidence=f"visible thing {i}",
+                                   quantity="", value="", unit="", tolerance_pct=0)
+                        for i in range(1, n_items + 1)],
                 screenshots=list(screenshots))
 
 

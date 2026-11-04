@@ -146,14 +146,14 @@ def test_task_with_broken_netlist_is_redrafted_once(coach, fake, conn, mid):
     coach.request_lesson(mid)
 
     calls = calls_of(fake, "examiner_task")
-    assert len(calls) == 2 and "'M' means milli" in calls[1]["messages"][0]["content"]
+    assert len(calls) == 2 and "'M' means milli" in calls[1]["messages"][0]["content"][-1]["text"]
     assert store.get_task(conn, mid)["instructions"] == good.instructions
 
 
-def test_task_still_broken_after_redraft_shows_a_warning(coach, fake, conn, mid):
+def test_task_still_broken_after_redrafts_shows_a_warning(coach, fake, conn, mid):
     bad = task_draft()
     bad.instructions = f"Find V_out.\n\n{BAD}"
-    fake.messages.by_agent["examiner_task"] = [bad, bad]
+    fake.messages.by_agent["examiner_task"] = [bad] * (1 + config.TASK_MAX_REDRAFTS)
     queue_lesson(fake)
     coach.request_lesson(mid)
     instructions = store.get_task(conn, mid)["instructions"]

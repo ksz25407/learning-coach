@@ -24,6 +24,10 @@ MODELS = {
     # Phase 4
     "examiner_task": HAIKU,  # writes the practical task + rubric
     "grader": SONNET,  # grades the practical task (text + screenshots)
+    # Phase 5: solved-problem tasks need correct numbers, so Sonnet drafts them and a blind
+    # solver checks the answer key (set examiner_task_solved to HAIKU to save money).
+    "examiner_task_solved": SONNET,
+    "task_solver": SONNET,
 }
 
 # How hard the model thinks: "low" | "medium" | "high" | "xhigh" | "max".
@@ -40,6 +44,8 @@ EFFORT = {
     "quiz_solver": "medium",
     "examiner_task": "low",
     "grader": "medium",
+    "examiner_task_solved": "medium",
+    "task_solver": "medium",
 }
 
 MAX_TOKENS = {
@@ -55,6 +61,8 @@ MAX_TOKENS = {
     "quiz_solver": 6000,
     "examiner_task": 6000,
     "grader": 6000,
+    "examiner_task_solved": 10000,
+    "task_solver": 10000,
 }
 
 # USD per 1M tokens. cache_write = 1.25x input (5-minute cache), cache_read = 0.1x input.
@@ -181,6 +189,16 @@ REVIEW_DAILY_LIMIT = 15
 EST_GRADER_INPUT_TOKENS = 6000  # task + rubric + your text + a few screenshots
 EST_OUTPUT_TOKENS["grader"] = 2000
 EST_OUTPUT_TOKENS["examiner_task"] = 2000
+
+# ---------- Phase 5: verified answer keys for solved problems ----------
+
+# A solved-problem task whose answer key the blind Task solver can't confirm (or whose rubric
+# or netlist is broken) is redrafted at most this many times; then it is shown as "unverified".
+TASK_MAX_REDRAFTS = 2
+# Final-value rubric items: allowed error (%) when the Examiner gives none.
+TASK_DEFAULT_TOLERANCE_PCT = 2.0
+EST_OUTPUT_TOKENS["examiner_task_solved"] = 4000
+EST_OUTPUT_TOKENS["task_solver"] = 5000
 
 # Fact-checker eval (evals/fact_check_eval.py). It refuses to start if this month's eval
 # spend + the run's worst-case cost would go over this.

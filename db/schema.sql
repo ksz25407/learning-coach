@@ -149,9 +149,11 @@ CREATE TABLE IF NOT EXISTS tasks (                      -- Examiner's practical 
     milestone_id     INTEGER NOT NULL UNIQUE REFERENCES milestones(id),
     proof_type       TEXT NOT NULL,                     -- file | solved_problem | explain_back
     instructions     TEXT NOT NULL,
-    rubric_json      TEXT NOT NULL,                     -- [{"id", "criterion", "evidence"}]
+    rubric_json      TEXT NOT NULL,                     -- [{"id", "criterion", "evidence"}] (+ Phase 5: kind, quantity, value, unit, tolerance_pct)
     screenshots_json TEXT NOT NULL,                     -- ["floor plan with dimensions visible", ...]
-    created_at       TEXT NOT NULL
+    created_at       TEXT NOT NULL,
+    key_status       TEXT,                              -- Phase 5, solved problems: verified | unverified (NULL = no key to check)
+    key_check_json   TEXT                               -- Phase 5: blind solver's values, the comparison and any problems left
 );
 
 CREATE TABLE IF NOT EXISTS task_submissions (

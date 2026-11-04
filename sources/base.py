@@ -37,6 +37,25 @@ def document_source(chunk: SourceChunk) -> dict:
 CACHE_HERE = {"type": "ephemeral"}
 
 
+def plain_document(chunk: SourceChunk) -> dict:
+    """A source document without citations (for agents that reply in JSON: citations and
+    structured outputs can't be combined)."""
+    return {
+        "type": "document",
+        "source": document_source(chunk),
+        "title": chunk.title or chunk.ref,
+        "context": f"Source kind: {chunk.kind}. Reference: {chunk.ref}",
+    }
+
+
+def source_documents(chunks: list[SourceChunk]) -> list[dict]:
+    """The documents, then a short marker block that ends the cached prefix. [] if no chunks."""
+    if not chunks:
+        return []
+    return [plain_document(c) for c in chunks] + [
+        {"type": "text", "text": "The documents above are the lesson's sources.", "cache_control": CACHE_HERE}]
+
+
 class LessonSource:
     """Base class. Each source type returns chunks relevant to one objective.
 

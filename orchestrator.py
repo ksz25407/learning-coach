@@ -15,7 +15,7 @@ import clock
 import config
 import review
 from agents import (curator, examiner, fact_checker, formatting, grader, pedagogy, planner, quiz_solver,
-                    scoper, teacher)
+                    scoper, task_solver, teacher)
 from agents.planner import PlanningFailed  # noqa: F401  (re-exported for the UI)
 from db import store
 from llm import BudgetExceeded, LLMError, RefusalError, price_for
@@ -173,16 +173,21 @@ class Coach:
         pid = m["profile_id"]
         profile = store.get_profile_data(self.conn, pid)
         notes = store.lesson_notes(row)
-        chunks = []
-        if notes is not None:  # Phase 2+ lesson: rebuild its sources
-            resources = store.get_resources(self.conn, milestone_id)
-            chunks = teacher.gather_chunks([self._pdf_source(pid), WebSource(self.conn, resources)],
-                                           m, profile)
+        chunks = self._rebuild_chunks(milestone_id, m, profile, notes)
         lesson = teacher.Lesson(text=row["content"], sources=json.loads(row["sources_json"]),
                                 citations=json.loads(row["citations_json"] or "[]"),
                                 model=row["model"] or "", chunks=chunks)
         self._check_and_save(milestone_id, profile, m, lesson, notes)
         return store.get_lesson(self.conn, milestone_id)
+
+    def _rebuild_chunks(self, milestone_id, milestone, profile, notes):
+        """The source documents of an existing lesson: the saved Curator picks (from the download
+        cache) and the subject's PDFs. A Phase 1 lesson (notes is None) had no sources."""
+        if notes is None:
+            return []
+        resources = store.get_resources(self.conn, milestone_id)
+        return teacher.gather_chunks([self._pdf_source(milestone["profile_id"]), WebSource(self.conn, resources)],
+                                     milestone, profile)
 
     def _check_and_save(self, milestone_id, profile, milestone, lesson, notes):
         """Run the checkers (with rewrites), save the lesson, then make the quiz.
@@ -216,7 +221,7 @@ class Coach:
         # so work you already started still matches it.
         if store.get_task(self.conn, milestone_id) is None:
             try:
-                self._make_task(milestone_id, profile, milestone, lesson.text)
+                self._make_task(milestone_id, profile, milestone, lesson.text, lesson.chunks)
             except CHECK_ERRORS as e:
                 review["task_error"] = str(e)
                 save()
@@ -330,7 +335,8 @@ class Coach:
     CURATOR_AGENTS = ("curator_search", "curator")
     CHECK_AGENTS = ("fact_checker", "pedagogy")
     QUIZ_AGENTS = ("examiner", "quiz_solver")
-    LESSON_AGENTS = CURATOR_AGENTS + ("teacher",) + CHECK_AGENTS + QUIZ_AGENTS + ("examiner_task",)
+    TASK_AGENTS = ("examiner_task", "examiner_task_solved", "task_solver")
+    LESSON_AGENTS = CURATOR_AGENTS + ("teacher",) + CHECK_AGENTS + QUIZ_AGENTS + TASK_AGENTS
     GATE_AGENTS = ("grader",)
 
     def agent_costs(self, profile_id: int) -> dict[str, float]:
@@ -349,9 +355,20 @@ class Coach:
         """(typical, max) cost of a new lesson. Typical: it passes the first check.
         Max: 2 rewrites (3 check rounds) and 2 quiz redrafts."""
         c = self.agent_costs(profile_id)
-        base = sum(c[a] for a in self.CURATOR_AGENTS) + c["teacher"] + c["examiner_task"]
-        return (base + self._check_costs(c, 0, 0),
-                base + self._check_costs(c, config.MAX_REVISION_ROUNDS, config.QUIZ_MAX_REDRAFTS))
+        base = sum(c[a] for a in self.CURATOR_AGENTS) + c["teacher"]
+        task_typical, task_max = self._task_costs(c, profile_id)
+        return (base + task_typical + self._check_costs(c, 0, 0),
+                base + task_max + self._check_costs(c, config.MAX_REVISION_ROUNDS, config.QUIZ_MAX_REDRAFTS))
+
+    def _task_costs(self, c: dict, profile_id: int) -> tuple[float, float]:
+        """(typical, max) cost of writing the practical task. A solved problem's draft is
+        checked by the blind Task solver; any draft may be redrafted TASK_MAX_REDRAFTS times."""
+        profile = store.get_profile_data(self.conn, profile_id) or {}  # {} before the Scoper is done
+        if profile.get("proof_of_skill") == "solved_problem":
+            one = c["examiner_task_solved"] + c["task_solver"]
+        else:
+            one = c["examiner_task"]
+        return one, (1 + config.TASK_MAX_REDRAFTS) * one
 
     def estimate_check_cost(self, profile_id: int) -> tuple[float, float]:
         """(typical, max) cost of "Run checks" on an existing lesson."""
@@ -390,7 +407,10 @@ class Coach:
             "pedagogy": cost("pedagogy", lesson + 2000, out["pedagogy"]),
             "examiner": cost("examiner", lesson + 2000, out["examiner"]),
             "quiz_solver": cost("quiz_solver", lesson + 2000, out["quiz_solver"]),
-            "examiner_task": cost("examiner_task", lesson + 2000, out["examiner_task"]),
+            # The task agents get the lesson's source documents too (course conventions).
+            "examiner_task": with_sources("examiner_task", lesson + 2000, out["examiner_task"]),
+            "examiner_task_solved": with_sources("examiner_task_solved", lesson + 2000, out["examiner_task_solved"]),
+            "task_solver": with_sources("task_solver", lesson + 2000, out["task_solver"]),
             # a few full-size screenshots (~4,800 tokens each at the 2,576 px limit)
             "grader": cost("grader", config.EST_GRADER_INPUT_TOKENS + 3 * 4800, out["grader"]),
         }
@@ -405,9 +425,9 @@ class Coach:
         return self.agent_costs(profile_id)["grader"]
 
     def estimate_prepare_cost(self, profile_id: int) -> float:
-        """"Prepare exam" for an old lesson: concept tags + practical task."""
+        """"Prepare exam" for an old lesson: concept tags + practical task (typical: first draft passes)."""
         c = self.agent_costs(profile_id)
-        return c["examiner"] + c["examiner_task"]
+        return c["examiner"] + self._task_costs(c, profile_id)[0]
 
     # =================================================================
     # Phase 4: the Examiner gate
@@ -425,21 +445,41 @@ class Coach:
             raise ValueError("That milestone doesn't exist.")
         return dict(m), store.get_lesson(self.conn, milestone_id), store.get_profile_data(self.conn, m["profile_id"])
 
-    def _make_task(self, milestone_id, profile, milestone, lesson_text):
-        """Draft the task. A broken netlist gets one redraft; if it's still broken, the task is
-        saved with the problems shown at the top so you (and the Grader) know."""
+    def _make_task(self, milestone_id, profile, milestone, lesson_text, chunks=None):
+        """Draft the practical task, checking each draft:
+        - every task: its netlists (netlist.py);
+        - solved problems: the rubric's shape, then the answer key, by a blind Task solver
+          working the problem from the lesson and its sources (your course's conventions).
+        A draft with problems is redrafted (the Examiner is told what was wrong), at most
+        TASK_MAX_REDRAFTS times. Then the last draft is saved: a solved problem as "unverified",
+        and a broken netlist with a warning on top so you (and the Grader) know."""
+        pid = milestone["profile_id"]
         plain = checks.plain_lesson(lesson_text)
-        task = examiner.draft_task(self.llm, profile, milestone, plain, profile_id=milestone["profile_id"])
-        problems = [b["problem"] for b in checks.block_problems(task["instructions"])]
-        if problems:
-            task = examiner.draft_task(self.llm, profile, milestone, plain, profile_id=milestone["profile_id"],
-                                       problems=problems)
-            problems = [b["problem"] for b in checks.block_problems(task["instructions"])]
-        if problems:
+        solved = profile.get("proof_of_skill") == "solved_problem"
+        problems, attempts = None, []
+        for attempt in range(config.TASK_MAX_REDRAFTS + 1):
+            task = examiner.draft_task(self.llm, profile, milestone, plain, profile_id=pid,
+                                       problems=problems, chunks=chunks)
+            netlist_problems = [b["problem"] for b in checks.block_problems(task["instructions"])]
+            problems = netlist_problems + (examiner.rubric_problems(task) if solved else [])
+            log = {"attempt": attempt, "problems": problems}
+            if solved and not problems:
+                solution = task_solver.solve(self.llm, profile, milestone, task, plain, chunks, profile_id=pid)
+                comparison = checks.compare_key(task["rubric"], solution)
+                problems = checks.key_problems(comparison, solution)
+                log.update(problems=problems, comparison=comparison, solver_working=solution["working"],
+                           solver_note=solution["note"])
+            attempts.append(log)
+            if not problems:
+                break
+        if netlist_problems:
             task["instructions"] = ("**Warning:** the app's netlist check found problems in this task, so "
-                                    "the circuit may be wrong: " + "; ".join(problems) + "\n\n" + task["instructions"])
+                                    "the circuit may be wrong: " + "; ".join(netlist_problems) + "\n\n"
+                                    + task["instructions"])
+        key_status = ("unverified" if problems else "verified") if solved else None
         store.save_task(self.conn, milestone_id, task["proof_type"], task["instructions"],
-                        task["rubric"], task["screenshots"])
+                        task["rubric"], task["screenshots"], key_status=key_status,
+                        key_check={"attempts": attempts, "problems": problems} if solved else None)
 
     def _current_grades(self, milestone_id: int):
         """(latest graded submission or None, its grades with your overrides applied)."""
@@ -505,7 +545,8 @@ class Coach:
             raise ValueError("Run the checks on this lesson first.")
         self._ensure_tagged(milestone_id, profile, lesson)
         if store.get_task(self.conn, milestone_id) is None:
-            self._make_task(milestone_id, profile, m, lesson["content"])
+            chunks = self._rebuild_chunks(milestone_id, dict(m), profile, store.lesson_notes(lesson))
+            self._make_task(milestone_id, profile, dict(m), lesson["content"], chunks)
 
     def _ensure_tagged(self, milestone_id, profile, lesson):
         """Give old quiz questions a concept + section, and put them in the question bank."""

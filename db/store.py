@@ -24,6 +24,8 @@ NEW_COLUMNS = [
     ("pdf_uploads", "data", "BLOB"),
     ("pdf_pages", "kind", "TEXT"),
     ("pdf_pages", "file_id", "TEXT"),
+    ("tasks", "key_status", "TEXT"),
+    ("tasks", "key_check_json", "TEXT"),
 ]
 
 
@@ -568,14 +570,18 @@ def quiz_results(conn, milestone_id: int) -> list[dict]:
 # ---------- practical task ----------
 
 def save_task(conn, milestone_id: int, proof_type: str, instructions: str, rubric: list[dict],
-              screenshots: list[str]):
+              screenshots: list[str], key_status: str | None = None, key_check: dict | None = None):
+    """key_status: "verified" | "unverified" for a solved problem's answer key, else None."""
     conn.execute(
-        "INSERT INTO tasks (milestone_id, proof_type, instructions, rubric_json, screenshots_json, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(milestone_id) DO UPDATE SET"
+        "INSERT INTO tasks (milestone_id, proof_type, instructions, rubric_json, screenshots_json, created_at,"
+        " key_status, key_check_json)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(milestone_id) DO UPDATE SET"
         " proof_type = excluded.proof_type, instructions = excluded.instructions,"
         " rubric_json = excluded.rubric_json, screenshots_json = excluded.screenshots_json,"
-        " created_at = excluded.created_at",
-        (milestone_id, proof_type, instructions, json.dumps(rubric), json.dumps(screenshots), utc_now_iso()))
+        " created_at = excluded.created_at, key_status = excluded.key_status,"
+        " key_check_json = excluded.key_check_json",
+        (milestone_id, proof_type, instructions, json.dumps(rubric), json.dumps(screenshots), utc_now_iso(),
+         key_status, json.dumps(key_check) if key_check is not None else None))
     conn.commit()
 
 
@@ -585,7 +591,8 @@ def get_task(conn, milestone_id: int) -> dict | None:
         return None
     return {"proof_type": r["proof_type"], "instructions": r["instructions"],
             "rubric": json.loads(r["rubric_json"]), "screenshots": json.loads(r["screenshots_json"]),
-            "created_at": r["created_at"]}
+            "created_at": r["created_at"], "key_status": r["key_status"],
+            "key_check": json.loads(r["key_check_json"]) if r["key_check_json"] else None}
 
 
 def add_submission(conn, milestone_id: int, text: str, images: list[tuple[str, bytes]],

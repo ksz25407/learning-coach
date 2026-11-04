@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from sources.base import CACHE_HERE, document_source
+from sources.base import source_documents
 
 SYSTEM = """You are the Fact-checker in a personal learning app. You get a LESSON and the source
 documents it was written from. Find claims in the lesson that are wrong or unsupported.
@@ -52,21 +52,9 @@ class FactCheck(BaseModel):
     flags: list[FactFlag]
 
 
-def plain_document(chunk) -> dict:
-    return {
-        "type": "document",
-        "source": document_source(chunk),
-        "title": chunk.title or chunk.ref,
-        "context": f"Source kind: {chunk.kind}. Reference: {chunk.ref}",
-    }
-
-
 def build_messages(lesson_text: str, chunks) -> list[dict]:
     """Documents first and cached (they stay the same across revision rounds), then the lesson."""
-    content = [plain_document(c) for c in chunks]
-    if chunks:
-        content.append({"type": "text", "text": "The documents above are the lesson's sources.",
-                        "cache_control": CACHE_HERE})
+    content = source_documents(chunks)
     note = "" if chunks else "(No source documents: every section is model knowledge.)\n\n"
     content.append({"type": "text", "text": f"{note}LESSON:\n{lesson_text}"})
     return [{"role": "user", "content": content}]

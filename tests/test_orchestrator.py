@@ -278,6 +278,16 @@ def test_estimate_typical_and_max(coach, conn, monkeypatch):
     pid = store.create_profile(conn)
     monkeypatch.setattr(coach, "agent_costs", lambda _pid: {a: 1.0 for a in coach.LESSON_AGENTS})
     # typical: 2 curator + teacher + 2 checkers + 2 quiz agents + task draft (Phase 4) = 8 calls
-    # max: + 2 rewrites (2 teacher + 4 checker calls) + 2 quiz redrafts (4 calls) = 18 calls
-    assert coach.estimate_lesson_cost(pid) == (8.0, 18.0)
+    # max: + 2 rewrites (2 teacher + 4 checker calls) + 2 quiz redrafts (4 calls)
+    #      + 2 task redrafts (Phase 5) = 20 calls
+    assert coach.estimate_lesson_cost(pid) == (8.0, 20.0)
     assert coach.estimate_check_cost(pid) == (4.0, 4.0 + 2 + 4 + 4)
+
+
+def test_estimate_solved_problem_includes_the_blind_task_solver(coach, conn, monkeypatch):
+    pid = store.create_profile(conn)
+    store.save_profile_data(conn, pid, {**PROFILE, "proof_of_skill": "solved_problem"})
+    monkeypatch.setattr(coach, "agent_costs", lambda _pid: {a: 1.0 for a in coach.LESSON_AGENTS})
+    # task = Sonnet draft + blind solve (2 calls); max: 3 attempts = 6 calls
+    assert coach.estimate_lesson_cost(pid) == (9.0, 23.0)  # max: 3 + 6 task calls + 14 check/quiz calls
+    assert coach.estimate_prepare_cost(pid) == 3.0  # concept tags + draft + solve

@@ -147,6 +147,28 @@ TASK_TEXT = {"passed": "Task passed", "failed": "Task: some items failed", "need
              "not_submitted": "Task not submitted", "missing": "No task yet"}
 
 
+def show_key_status(task: dict, passed: bool):
+    """Solved problems: was the answer key confirmed by the blind Task solver? The details name
+    the expected values, so they are only shown once you have passed the task."""
+    status = task.get("key_status")
+    if status == "verified":
+        st.badge("Answer key verified", icon=":material/verified:", color="green")
+    elif status == "unverified":
+        st.badge("Answer key unverified", icon=":material/warning:", color="orange")
+        st.caption("A blind solver couldn't confirm the expected final values, so a final-value grade may "
+                   "be wrong. If you're sure of your answer, use Override with your reason.")
+    if status and passed and task.get("key_check"):
+        with st.expander("Answer key check"):
+            for a in task["key_check"]["attempts"]:
+                lines = [f"{c['quantity']}: key {c['key']}, solver {c['solver'] or '(none)'} "
+                         f"({'match' if c['match'] else 'differs'})" for c in a.get("comparison", [])]
+                lines += a["problems"]
+                st.markdown(f"**Draft {a['attempt'] + 1}:**  \n" + ("  \n".join(lines) or "no problems"))
+            if task["key_check"]["attempts"] and task["key_check"]["attempts"][-1].get("solver_working"):
+                st.caption("Solver's working (last draft):")
+                st.markdown(task["key_check"]["attempts"][-1]["solver_working"])
+
+
 def show_dropped(quiz):
     if quiz and quiz["dropped"]:
         with st.expander(f"Dropped questions ({len(quiz['dropped'])})"):
@@ -254,6 +276,7 @@ def show_exam(mid, review):
         if task is None:
             st.warning("There is no task yet.", icon=":material/warning:")
             return
+        show_key_status(task, passed=gs["task_status"] == "passed")
         st.markdown(task["instructions"])
         st.markdown("**Rubric** (every item must pass)  \n" +
                     "  \n".join(f"{r['id']}. {r['criterion']} · _needs: {r['evidence']}_" for r in task["rubric"]))
