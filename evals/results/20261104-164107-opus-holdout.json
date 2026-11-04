@@ -1,0 +1,69 @@
+{
+  "timestamp": "20261104-164107",
+  "set": "held-out",
+  "model_requested": "claude-opus-5-5",
+  "models_answered": "claude-opus-5-5",
+  "effort": "high",
+  "cost_usd": 0.0309,
+  "totals": {
+    "lessons": 3,
+    "failed_calls": 0,
+    "planted": 4,
+    "caught": 4,
+    "missed": 0,
+    "false_alarms": 0,
+    "false_alarms_on_clean_lessons": 0
+  },
+  "lessons": [
+    {
+      "id": "circuits_thevenin",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "Replace each voltage source with an open circuit and each current source with a short circuit",
+          "correct": "Replace each voltage source with a short circuit and each current source with an open circuit",
+          "kind": "subtle_claim",
+          "why": "Swapped: a zero-volt source is a short, a zero-amp source is an open (source)."
+        },
+        {
+          "quote": "Rth = 4 kΩ + 12 kΩ = 16 kΩ",
+          "correct": "Rth = 4 kΩ ∥ 12 kΩ = 3 kΩ",
+          "kind": "wrong_value",
+          "why": "With the source shorted, R1 and R2 are in parallel: 4 × 12 / 16 = 3 kΩ."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "revit_modify_tools",
+      "planted": 0,
+      "caught": [],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "revit_roof_footprint",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "choose **Roof by Extrusion**",
+          "correct": "choose Roof by Footprint",
+          "kind": "wrong_name",
+          "why": "The footprint workflow uses Roof by Footprint; Roof by Extrusion is a different tool sketched in elevation/section."
+        },
+        {
+          "quote": "Set **Overhang** to 60 mm",
+          "correct": "Set Overhang to 600 mm",
+          "kind": "wrong_value",
+          "why": "The house brief (pdf) says 600 mm on all sides."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    }
+  ]
+}

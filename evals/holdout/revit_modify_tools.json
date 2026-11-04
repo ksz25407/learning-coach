@@ -1,0 +1,30 @@
+{
+  "id": "revit_modify_tools",
+  "subject": "revit",
+  "milestone": {"title": "Editing tools", "objective": "Use Move, Copy, Rotate, Mirror and Align to fix a wall layout in 10 minutes", "est_hours": 1},
+  "sources": [
+    {"kind": "web", "ref": "fixture://revit-help/modify-tools", "title": "Revit Help: Modify tools (fixture)",
+     "text": "The Modify panel on the Modify tab holds the main editing tools. Select elements first, then choose the tool. Move (keyboard shortcut MV): click a start point, then an end point, or type a distance. Copy (CO): works like Move but leaves the original in place; select Multiple in the Options Bar to place several copies. Rotate (RO): click to set the rotation angle start and end, or type an angle; drag the rotation centre to change the pivot. Mirror - Pick Axis (MM): click an existing line or edge to mirror about it; clear Copy in the Options Bar to move the original instead of copying it. Align (AL): first click the reference you want to align TO, then click the element to move."}
+  ],
+  "lesson_lines": [
+    "## Select first, then edit",
+    "[Source: web]",
+    "All these tools are on the Modify tab, Modify panel. Select the elements first, then pick the tool.",
+    "",
+    "## Move, Copy, Rotate",
+    "[Source: web]",
+    "- **Move (MV):** click a start point and an end point, or type a distance.",
+    "- **Copy (CO):** like Move, but the original stays. Tick **Multiple** in the Options Bar to place several copies.",
+    "- **Rotate (RO):** click the start and end of the angle, or type it. Drag the rotation centre to change the pivot.",
+    "",
+    "## Mirror and Align",
+    "[Source: web]",
+    "- **Mirror - Pick Axis (MM):** click an existing line or edge to mirror about. Clear **Copy** in the Options Bar if you want to flip the original instead of copying it.",
+    "- **Align (AL):** click the reference you want to align TO first, then the element that should move.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Open your wall layout and fix it: move one wall, copy a partition three times, rotate the porch walls 90°, mirror the bathroom and align the interior walls to the grid."
+  ],
+  "planted_errors": []
+}

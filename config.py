@@ -16,10 +16,10 @@ MODELS = {
     "teacher": SONNET,
     "curator_search": HAIKU,  # Curator step 1: web search
     "curator": HAIKU,  # Curator step 2: pick resources (JSON)
-    # Later phases:
-    "examiner": HAIKU,
+    # Phase 3: checkers
+    "fact_checker": OPUS,  # switch to SONNET to halve the cost (compare with the eval first)
     "pedagogy": SONNET,
-    "fact_checker": SONNET,  # switch to OPUS for stricter checking
+    "examiner": HAIKU,  # minimal Examiner: drafts the quiz + answer key
     "quiz_solver": SONNET,  # switch to OPUS for stricter checking
 }
 
@@ -31,6 +31,10 @@ EFFORT = {
     "teacher": "medium",
     "curator_search": "low",
     "curator": "low",
+    "fact_checker": "high",  # set explicitly: Opus 5.5 defaults to "medium"
+    "pedagogy": "medium",
+    "examiner": "low",
+    "quiz_solver": "medium",
 }
 
 MAX_TOKENS = {
@@ -40,6 +44,10 @@ MAX_TOKENS = {
     "teacher": 16000,
     "curator_search": 8000,
     "curator": 4000,
+    "fact_checker": 8000,  # includes thinking; the eval's cost cap uses this as the worst case
+    "pedagogy": 6000,
+    "examiner": 6000,
+    "quiz_solver": 6000,
 }
 
 # USD per 1M tokens. cache_write = 1.25x input (5-minute cache), cache_read = 0.1x input.
@@ -103,6 +111,32 @@ EST_SAMPLE_CALLS = 20
 EST_SAFETY_FACTOR = 1.25
 EST_TEACHER_OUTPUT_TOKENS = 8000  # includes thinking tokens
 EST_CURATOR_INPUT_TOKENS = 40000  # search results read by the Curator (Haiku, cheap)
+
+# ---------- Phase 3: checkers ----------
+
+# Fact-checker + Pedagogy reviewer can send a lesson back to the Teacher this many times.
+# After that the lesson is shown anyway, marked "Flagged", with the remaining problems on top.
+MAX_REVISION_ROUNDS = 2
+
+# Lesson length: reading time = words / READING_WPM. Budget = READING_SHARE of the milestone's
+# estimated time, but never more than READING_CAP_MIN minutes.
+READING_WPM = 200
+READING_SHARE = 0.25
+READING_CAP_MIN = 20
+
+# Quiz (Examiner + blind Quiz solver). Questions the solver gets "wrong" are dropped.
+QUIZ_TARGET_QUESTIONS = 5
+QUIZ_MIN_QUESTIONS = 3  # fewer survivors -> the Examiner writes replacements
+QUIZ_MAX_REDRAFTS = 2
+QUIZ_DEFAULT_TOLERANCE_PCT = 1.0  # numeric answers, when the Examiner gives no tolerance
+
+# Rough output tokens per call (thinking included), for cost estimates before real usage exists.
+EST_LESSON_TOKENS = 4000  # a lesson as input to the checkers
+EST_OUTPUT_TOKENS = {"fact_checker": 4000, "pedagogy": 2000, "examiner": 3000, "quiz_solver": 2000}
+
+# Fact-checker eval (evals/fact_check_eval.py). It refuses to start if this month's eval
+# spend + the run's worst-case cost would go over this.
+EVAL_MONTHLY_CAP_USD = 3.0
 
 # Server-side refusal fallbacks (beta). Off by default.
 USE_SERVER_FALLBACKS = False

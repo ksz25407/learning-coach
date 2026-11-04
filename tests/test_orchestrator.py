@@ -8,7 +8,7 @@ from db import store
 from llm import RefusalError
 from orchestrator import Coach
 from sources import web
-from tests.conftest import reply, search_results, text
+from tests.conftest import agent_of, pass_all_checks, reply, search_results, text
 from tests.helpers import FakeHTTP, FakeResponse, article_html, make_pdf
 from tests.test_agents import PROFILE, plan_draft
 
@@ -19,7 +19,8 @@ def queue_lesson(fake, teacher_text="## Walls\nDraw walls."):
 
 
 @pytest.fixture
-def coach(conn, llm):
+def coach(conn, llm, fake):
+    pass_all_checks(fake)  # Phase 3 checkers pass unless a test says otherwise
     return Coach(conn, llm)
 
 
@@ -99,7 +100,8 @@ def test_lesson_generated_once(coach, fake, conn):
     lesson2 = coach.request_lesson(first["id"])
     assert len(fake.messages.calls) == calls_after_first  # no new API call
     assert lesson1["id"] == lesson2["id"]
-    assert lesson1["verified"] == 0
+    assert lesson1["verified"] == 0  # passed, but written from model knowledge
+    assert lesson1["status"] == "partly_unsourced"
 
 
 def count(conn, table, where="1=1", args=()):
@@ -180,7 +182,7 @@ def test_lesson_uses_curator_page_and_pdf(coach, fake, conn, monkeypatch):
     fake.messages.text_replies.append("## Walls\nDraw walls.")
     lesson = coach.request_lesson(mid)
 
-    teacher_call = fake.messages.calls[-1][1]
+    teacher_call = [c for _, c in fake.messages.calls if agent_of(c) == "teacher"][-1]
     docs = [b for b in teacher_call["messages"][0]["content"] if b["type"] == "document"]
     assert [d["context"].split(".")[0] for d in docs] == ["Source kind: pdf", "Source kind: web"]
     notes = store.lesson_notes(lesson)
@@ -232,10 +234,11 @@ def test_curator_picks_reused_after_teacher_failure(coach, fake, conn, monkeypat
 
 def test_cost_estimate_grows_with_pdf(coach, fake, conn):
     pid = scope_to_learning(coach, fake)
-    base = coach.estimate_lesson_cost(pid)
-    assert base >= config.WEB_SEARCH_MAX_USES * config.WEB_SEARCH_USD
+    typical, worst = coach.estimate_lesson_cost(pid)
+    assert typical >= config.WEB_SEARCH_MAX_USES * config.WEB_SEARCH_USD
+    assert worst > typical
     coach.upload_pdf(pid, "manual.pdf", make_pdf(["walls " * 400] * 5))
-    assert coach.estimate_lesson_cost(pid) > base
+    assert coach.estimate_lesson_cost(pid)[0] > typical
 
 
 def test_delete_subject_removes_pdfs_and_resources_keeps_web_cache(coach, fake, conn):
@@ -252,32 +255,36 @@ def test_delete_subject_removes_pdfs_and_resources_keeps_web_cache(coach, fake, 
     assert count(conn, "web_pages") == 1  # shared cache kept
 
 
-def log_lessons(conn, costs):
-    """Pretend lessons were made: one call per lesson agent, with the given (search, pick, teacher) costs."""
-    for search, pick, teach in costs:
-        store.log_usage(conn, None, "curator_search", "m", 1, 1, 0, 0, search)
-        store.log_usage(conn, None, "curator", "m", 1, 1, 0, 0, pick)
-        store.log_usage(conn, None, "teacher", "m", 1, 1, 0, 0, teach)
+def log_calls(conn, agent, costs):
+    for c in costs:
+        store.log_usage(conn, None, agent, "m", 1, 1, 0, 0, c)
 
 
-def test_estimate_uses_formula_until_enough_lessons(coach, conn):
+def test_estimate_uses_formula_until_enough_calls(coach, conn):
     pid = store.create_profile(conn)
-    formula = coach._formula_estimate(pid)
-    log_lessons(conn, [(0.02, 0.001, 0.03)] * (config.EST_MIN_LESSONS - 1))
-    assert coach.estimate_lesson_cost(pid) == pytest.approx(formula)
+    formula = coach._formula_costs(pid)
+    log_calls(conn, "teacher", [0.03] * (config.EST_MIN_LESSONS - 1))
+    assert coach.agent_costs(pid)["teacher"] == pytest.approx(formula["teacher"])
 
 
 def test_estimate_uses_real_averages_kept_high(coach, conn):
     pid = store.create_profile(conn)
-    log_lessons(conn, [(0.02, 0.001, 0.03), (0.03, 0.001, 0.05), (0.025, 0.001, 0.04)])
-    expected = (0.025 + 0.001 + 0.04) * config.EST_SAFETY_FACTOR
-    assert coach.estimate_lesson_cost(pid) == pytest.approx(expected)
-    assert coach.estimate_lesson_cost(pid) > 0.025 + 0.001 + 0.04  # a bit above the real average
+    log_calls(conn, "teacher", [0.03, 0.05, 0.04])
+    assert coach.agent_costs(pid)["teacher"] == pytest.approx(0.04 * config.EST_SAFETY_FACTOR)
 
 
 def test_estimate_uses_only_recent_calls(coach, conn, monkeypatch):
     monkeypatch.setattr(config, "EST_SAMPLE_CALLS", 3)
     pid = store.create_profile(conn)
-    log_lessons(conn, [(1.0, 1.0, 1.0)] * 5)  # old, expensive
-    log_lessons(conn, [(0.01, 0.01, 0.01)] * 3)  # recent
-    assert coach.estimate_lesson_cost(pid) == pytest.approx(0.03 * config.EST_SAFETY_FACTOR)
+    log_calls(conn, "fact_checker", [1.0] * 5)  # old, expensive
+    log_calls(conn, "fact_checker", [0.01] * 3)  # recent
+    assert coach.agent_costs(pid)["fact_checker"] == pytest.approx(0.01 * config.EST_SAFETY_FACTOR)
+
+
+def test_estimate_typical_and_max(coach, conn, monkeypatch):
+    pid = store.create_profile(conn)
+    monkeypatch.setattr(coach, "agent_costs", lambda _pid: {a: 1.0 for a in coach.LESSON_AGENTS})
+    # typical: 2 curator + teacher + 2 checkers + 2 quiz agents = 7 calls
+    # max: + 2 rewrites (2 teacher + 4 checker calls) + 2 quiz redrafts (4 calls) = 17 calls
+    assert coach.estimate_lesson_cost(pid) == (7.0, 17.0)
+    assert coach.estimate_check_cost(pid) == (4.0, 4.0 + 2 + 4 + 4)

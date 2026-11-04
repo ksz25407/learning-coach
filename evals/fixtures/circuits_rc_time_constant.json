@@ -1,0 +1,27 @@
+{
+  "id": "circuits_rc_time_constant",
+  "subject": "circuits",
+  "milestone": {"title": "RC time constant", "objective": "Compute the time constant of an RC circuit and the capacitor voltage after 1 to 5 time constants", "est_hours": 2},
+  "sources": [
+    {"kind": "web", "ref": "fixture://ee-notes/rc-circuits", "title": "EE notes: RC circuits (fixture)",
+     "text": "When a capacitor C charges through a resistor R from a DC source, the time constant is tau = R C (seconds, with R in ohms and C in farads). After one time constant the capacitor voltage reaches about 63.2 % of its final value. After 5 time constants it reaches about 99.3 %, and the capacitor is usually considered fully charged. When discharging, the voltage falls to about 36.8 % of its starting value after one time constant. Example: R = 10 kilohm and C = 100 microfarad give tau = 10,000 x 0.0001 = 1 s."}
+  ],
+  "lesson_lines": [
+    "## The time constant",
+    "[Source: web]",
+    "A capacitor C charging through a resistor R has time constant **τ = R C**. With R in ohms and C in farads, τ is in seconds.",
+    "",
+    "Example: R = 10 kΩ, C = 100 µF: τ = 10 000 × 0.0001 = 1 s.",
+    "",
+    "## Charging and discharging",
+    "[Source: web]",
+    "- After 1 τ, the capacitor reaches about **63.2 %** of its final voltage.",
+    "- After 5 τ, about **99.3 %**: treat it as fully charged.",
+    "- Discharging, the voltage falls to about **36.8 %** of its starting value after 1 τ.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "R = 4.7 kΩ, C = 220 µF, charged from 9 V. Find τ and the capacitor voltage after 1 τ."
+  ],
+  "planted_errors": []
+}

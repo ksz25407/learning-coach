@@ -1,0 +1,33 @@
+{
+  "id": "revit_roof_footprint",
+  "subject": "revit",
+  "milestone": {"title": "Roof by footprint", "objective": "Create a hip roof over the exterior walls with the house's overhang in 15 minutes", "est_hours": 1.5},
+  "sources": [
+    {"kind": "web", "ref": "fixture://revit-help/roof-footprint", "title": "Revit Help: Roof by footprint (fixture)",
+     "text": "To create a roof from a building footprint: open the floor plan view of the roof level. On the Architecture tab, Build panel, click the Roof drop-down and choose Roof by Footprint. Revit enters sketch mode. In the Options Bar, select Defines Slope to give each picked edge a slope; clear it on an edge to make that side a vertical gable. Enter the Overhang distance, then use Pick Walls to select the exterior walls. Click Finish Edit Mode. A footprint roof with Defines Slope on every edge creates a hip roof. Roof by Extrusion is a different tool: it extrudes a profile sketched in an elevation or section view."},
+    {"kind": "pdf", "ref": "house-brief.pdf p.2", "title": "House brief p.2 (fixture)",
+     "text": "Roof: hip roof, 30 degree pitch, overhang 600 mm on all sides to shade the south windows in summer."}
+  ],
+  "lesson_lines": [
+    "## Start the roof",
+    "[Source: web]",
+    "1. Open the floor plan of your **Roof** level.",
+    "2. Architecture tab, Build panel: open the Roof drop-down and choose **Roof by Extrusion**. Revit enters sketch mode.",
+    "",
+    "## Slopes and overhang",
+    "[Source: pdf, web]",
+    "3. In the Options Bar, keep **Defines Slope** on: every picked edge then slopes, which gives a hip roof. (Clear it on an edge to make that side a vertical gable.)",
+    "4. Set **Overhang** to 60 mm, as the house brief asks, to shade the south windows in summer.",
+    "5. Use **Pick Walls** to select each exterior wall, then click **Finish Edit Mode**.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Build the hip roof over your house and set the pitch to 30° in the Properties palette."
+  ],
+  "planted_errors": [
+    {"quote": "choose **Roof by Extrusion**", "correct": "choose Roof by Footprint", "kind": "wrong_name",
+     "why": "The footprint workflow uses Roof by Footprint; Roof by Extrusion is a different tool sketched in elevation/section."},
+    {"quote": "Set **Overhang** to 60 mm", "correct": "Set Overhang to 600 mm", "kind": "wrong_value",
+     "why": "The house brief (pdf) says 600 mm on all sides."}
+  ]
+}

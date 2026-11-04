@@ -1,0 +1,37 @@
+{
+  "id": "revit_doors_windows",
+  "subject": "revit",
+  "milestone": {"title": "Doors and windows", "objective": "Place all doors and windows from the sketch, with correct swing and sill height, in 20 minutes", "est_hours": 1.5},
+  "sources": [
+    {"kind": "web", "ref": "fixture://revit-help/doors", "title": "Revit Help: Doors (fixture)",
+     "text": "Doors are hosted elements: you can only place a door in a wall. On the Architecture tab, Build panel, click Door (keyboard shortcut DR). Choose a door type in the Type Selector. If the type you need is not in the project, click Load Family on the Modify | Place Door tab and open the Doors folder. Select Tag on Placement to tag each door automatically. While placing the door, press the Spacebar to flip the swing; after placing it, use the flip arrows that appear when the door is selected."},
+    {"kind": "web", "ref": "fixture://revit-help/windows", "title": "Revit Help: Windows (fixture)",
+     "text": "Windows are also hosted by walls. On the Architecture tab, Build panel, click Window (keyboard shortcut WN). Choose a window type in the Type Selector and click in a wall to place it. Sill Height is an instance parameter: select a window and change Sill Height in the Properties palette to set the distance from the level to the bottom of the window."}
+  ],
+  "lesson_lines": [
+    "## Doors",
+    "[Source: web]",
+    "Doors are hosted elements: they live inside a wall.",
+    "",
+    "1. Architecture tab, Build panel: click **Door** (shortcut DR).",
+    "2. Choose the door type in the Type Selector. Missing a type? Click **Load Family** on the Modify | Place Door tab and open the Doors folder.",
+    "3. Turn on **Tag on Placement** so each door gets a tag.",
+    "4. Hover over the wall and press the Spacebar to flip the swing, then click to place.",
+    "",
+    "You can also place doors in empty space first and attach them to a wall later, which is handy while the walls are still changing.",
+    "",
+    "## Windows",
+    "[Source: web]",
+    "Windows are hosted by walls too. Click **Window** (shortcut WD), pick the type and click in a wall. To set the height, select the window and change **Sill Height** in the Properties palette: it is an instance parameter, so each window can have its own.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Place every door and window from your sketch. Check each door swing against the sketch and set the window sill heights."
+  ],
+  "planted_errors": [
+    {"quote": "You can also place doors in empty space first and attach them to a wall later", "correct": "Doors can only be placed in a wall (they are hosted elements).", "kind": "subtle_claim",
+     "why": "The source says doors are hosted and can only be placed in a wall."},
+    {"quote": "(shortcut WD)", "correct": "(shortcut WN)", "kind": "wrong_name",
+     "why": "The source gives WN as the Window shortcut."}
+  ]
+}

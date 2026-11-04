@@ -28,7 +28,10 @@ CREATE TABLE IF NOT EXISTS lessons (
     model        TEXT,
     created_at   TEXT NOT NULL,
     citations_json TEXT,                                -- Phase 2: numbered citations
-    notes_json     TEXT                                 -- Phase 2: pages picked, URLs skipped... (NULL = Phase 1 lesson)
+    notes_json     TEXT,                                -- Phase 2: pages picked, URLs skipped... (NULL = Phase 1 lesson)
+    status         TEXT,                                -- Phase 3: unchecked | verified | partly_unsourced | flagged (NULL = unchecked)
+    review_json    TEXT,                                -- Phase 3: checker flags for every round
+    revision_rounds INTEGER                             -- Phase 3: how many times the Teacher rewrote it
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -114,4 +117,16 @@ CREATE TABLE IF NOT EXISTS web_pages (                  -- shared download cache
     url        TEXT PRIMARY KEY,
     text       TEXT NOT NULL,
     fetched_at TEXT NOT NULL
+);
+
+-- Phase 3: quizzes -------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS quizzes (                    -- Examiner quiz, after the blind Quiz solver
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id   INTEGER NOT NULL UNIQUE REFERENCES milestones(id),
+    questions_json TEXT NOT NULL,                       -- questions that survived (with answer key)
+    dropped_json   TEXT NOT NULL,                       -- dropped questions + why
+    redrafts       INTEGER NOT NULL,
+    flagged        INTEGER NOT NULL,                    -- 1 = fewer than QUIZ_MIN_QUESTIONS survived
+    created_at     TEXT NOT NULL
 );

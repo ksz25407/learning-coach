@@ -6,9 +6,13 @@ Every agent call goes through LLM.call_structured() or LLM.call_text(), which:
   3. count tokens first when the prompt looks large,
   4. log tokens and cost (priced by the model that actually answered) to usage_log,
   5. raise a clear error on refusals or cut-off replies.
+
+Two checkers can run at the same time (threads). They share one SQLite connection, so the
+budget check and the usage logging are done under a lock.
 """
 import json
 import logging
+import threading
 
 import config
 from db import store
@@ -63,6 +67,7 @@ class LLM:
     def __init__(self, conn, client=None):
         self.conn = conn
         self._client = client  # tests pass a fake client
+        self._db_lock = threading.Lock()
 
     @property
     def client(self):
@@ -115,7 +120,9 @@ class LLM:
     # --- internals ---
 
     def _build(self, agent, system, messages, profile, extra):
-        if store.month_spend(self.conn) >= config.STOP_USD:
+        with self._db_lock:
+            spent = store.month_spend(self.conn)
+        if spent >= config.STOP_USD:
             raise BudgetExceeded(
                 f"This month's spend has reached ${config.STOP_USD:.2f}. "
                 "Raise STOP_USD in config.py to continue."
@@ -147,6 +154,14 @@ class LLM:
 
     def _finish(self, agent, response, profile_id):
         u = response.usage
+        with self._db_lock:
+            self._log(agent, response, u, profile_id)
+        if response.stop_reason == "refusal":
+            raise RefusalError(f"{agent}: the model declined this request.")
+        if response.stop_reason == "max_tokens":
+            raise LLMError(f"{agent}: reply was cut off (max_tokens). Raise MAX_TOKENS['{agent}'].")
+
+    def _log(self, agent, response, u, profile_id):
         store.log_usage(
             self.conn,
             profile_id=profile_id,
@@ -158,10 +173,6 @@ class LLM:
             cache_read_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
             cost_usd=compute_cost(response.model, u),
         )
-        if response.stop_reason == "refusal":
-            raise RefusalError(f"{agent}: the model declined this request.")
-        if response.stop_reason == "max_tokens":
-            raise LLMError(f"{agent}: reply was cut off (max_tokens). Raise MAX_TOKENS['{agent}'].")
 
 
 def system_blocks(system: str, profile: dict | None, extra: str | None = None) -> list[dict]:

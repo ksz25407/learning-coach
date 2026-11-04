@@ -8,6 +8,7 @@ cites. The model's own [Source: ...] tags are not trusted.
 import re
 from dataclasses import dataclass, field
 
+from checks import SOURCES_LIST
 from sources.base import PRIORITY, ModelKnowledgeSource, SourceChunk, gather
 
 SYSTEM = """You are the Teacher in a personal learning app. Write ONE lesson that gets the
@@ -30,6 +31,10 @@ Format (Markdown):
 - End with a "## Practice" section: a short task that mirrors the objective.
 
 Be concrete and brief. Teach only what the objective needs.
+
+Revisions: if the request includes a PREVIOUS DRAFT and REVIEWER FEEDBACK, rewrite the lesson so
+every feedback point is fixed, using the same documents. Keep everything that was not criticised.
+If a point says a claim is wrong or unsupported, correct it from the documents or remove it.
 """
 
 SOURCE_TAG = re.compile(r"^\s*\[Source:[^\]]*\]\s*$", re.IGNORECASE)
@@ -43,6 +48,7 @@ class Lesson:
     sources: list[dict]  # every chunk given to the Teacher: {"kind", "ref"}
     citations: list[dict] = field(default_factory=list)  # {"n", "kind", "ref", "title", "cited_text"}
     model: str = ""
+    chunks: list[SourceChunk] = field(default_factory=list)  # exact text the Teacher saw (for checkers)
 
 
 def document_block(chunk: SourceChunk) -> dict:
@@ -109,15 +115,31 @@ def sources_list(citations: list[dict]) -> str:
             quote = quote[:200] + "…"
         where = f"[{c['title']}]({c['ref']})" if c["kind"] == "web" else c["ref"]
         rows.append(f"- **[{c['n']}]** {c['kind']} · {where}: “{quote}”")
-    return "\n\n---\n**Sources**\n\n" + "\n".join(rows)
+    return SOURCES_LIST + "\n\n" + "\n".join(rows)
 
 
-def write_lesson(llm, profile: dict, milestone: dict, sources=None, profile_id=None) -> Lesson:
+def section_labels(text: str) -> list[str]:
+    """The [Source: ...] label of every section, e.g. ['pdf, web', 'model']."""
+    return [m.group(1).strip() for m in re.finditer(r"^\[Source:\s*([^\]]*)\]\s*$", text, re.MULTILINE)]
+
+
+def gather_chunks(sources, milestone: dict, profile: dict) -> list[SourceChunk]:
     sources = sources or [ModelKnowledgeSource()]
-    topic = f"{milestone['title']}: {milestone['objective']}"
-    chunks = gather(sources, topic, profile)
+    return gather(sources, f"{milestone['title']}: {milestone['objective']}", profile)
+
+
+def write_lesson(llm, profile: dict, milestone: dict, sources=None, profile_id=None,
+                 chunks: list[SourceChunk] | None = None, previous: str | None = None,
+                 feedback: str | None = None) -> Lesson:
+    """Write a lesson. For a revision, pass the same `chunks`, the `previous` draft (plain
+    text) and the checkers' `feedback`."""
+    if chunks is None:
+        chunks = gather_chunks(sources, milestone, profile)
 
     request = f"Milestone: {milestone['title']}\nObjective: {milestone['objective']}"
+    if previous is not None:
+        request += (f"\n\nPREVIOUS DRAFT:\n{previous}\n\nREVIEWER FEEDBACK (fix every point):\n"
+                    f"{feedback}\n\nWrite the full corrected lesson.")
     content = [document_block(c) for c in chunks] + [{"type": "text", "text": request}]
     blocks, model = llm.call_raw("teacher", SYSTEM, [{"role": "user", "content": content}],
                                  profile=profile, profile_id=profile_id)
@@ -127,4 +149,4 @@ def write_lesson(llm, profile: dict, milestone: dict, sources=None, profile_id=N
     text = MARK_RE.sub(lambda m: f"[{m.group(1)}]", text) + sources_list(citations)
 
     used = [{"kind": c.kind, "ref": c.ref} for c in chunks] or [{"kind": "model", "ref": model}]
-    return Lesson(text=text, sources=used, citations=citations, model=model)
+    return Lesson(text=text, sources=used, citations=citations, model=model, chunks=chunks)

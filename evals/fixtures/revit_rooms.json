@@ -1,0 +1,31 @@
+{
+  "id": "revit_rooms",
+  "subject": "revit",
+  "milestone": {"title": "Rooms", "objective": "Place and name a room in every ground-floor space, with area tags, in 15 minutes", "est_hours": 1},
+  "sources": [
+    {"kind": "web", "ref": "fixture://revit-help/rooms", "title": "Revit Help: Rooms (fixture)",
+     "text": "A room is a space bounded by room-bounding elements such as walls, floors and room separation lines. On the Architecture tab, Room & Area panel, click Room (keyboard shortcut RM). Select Tag on Placement on the Modify | Place Room tab to tag rooms as you place them. Click inside an enclosed area to place a room. To divide an open space without a wall, for example a kitchen open to a living room, use Room Separator on the Room & Area panel and draw a line across the opening. To name a room, double-click the name in its tag or change Name in the Properties palette. Revit calculates the room's area from its boundaries; choose a room tag type that shows the area to display it."}
+  ],
+  "lesson_lines": [
+    "## Place rooms",
+    "[Source: web]",
+    "A room is a space enclosed by room-bounding elements such as walls and room separation lines.",
+    "",
+    "1. Architecture tab, Room & Area panel: click **Room** (shortcut RM).",
+    "2. Turn on **Tag on Placement** on the Modify | Place Room tab.",
+    "3. Click inside each enclosed space.",
+    "",
+    "## Open spaces",
+    "[Source: web]",
+    "Your kitchen opens onto the living room with no wall between them. Use **Room Separator** (Room & Area panel) and draw a line across the opening, then place one room on each side.",
+    "",
+    "## Names and areas",
+    "[Source: web]",
+    "Double-click the name in the tag, or change **Name** in the Properties palette. Revit calculates each room's area from its boundaries; pick a room tag type that shows the area.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Place, name and tag a room in every ground-floor space, with the area visible on each tag."
+  ],
+  "planted_errors": []
+}

@@ -1,0 +1,46 @@
+{
+  "id": "revit_floors",
+  "subject": "revit",
+  "milestone": {
+    "title": "Floors",
+    "objective": "Create the ground-floor slab from the exterior walls in 10 minutes",
+    "est_hours": 1
+  },
+  "sources": [
+    {
+      "kind": "web",
+      "ref": "fixture://revit-help/floors",
+      "title": "Revit Help: Floors (fixture)",
+      "text": "To create a floor: 1. Open the floor plan view of the level where the floor goes. 2. On the Architecture tab, Build panel, click the Floor drop-down and choose Floor: Architectural. Revit enters sketch mode. 3. In the Type Selector, choose the floor type. 4. Sketch the boundary: on the Draw panel, use Pick Walls to select the exterior walls, or draw the boundary lines yourself. The boundary must be a single closed loop with no gaps or overlapping lines. 5. On the Mode panel, click Finish Edit Mode (the green check mark) to create the floor. If the boundary is not closed, Revit shows an error and stays in sketch mode."
+    }
+  ],
+  "lesson_lines": [
+    "## Create the slab",
+    "[Source: web]",
+    "1. Open the **Level 1** floor plan.",
+    "2. Architecture tab, Build panel: open the Floor drop-down and choose **Floor: Architectural**.",
+    "3. Click **Finish Edit Mode** (the green check mark) to enter sketch mode.",
+    "4. Pick the floor type in the Type Selector.",
+    "5. On the Draw panel, use **Pick Walls** and click each exterior wall.",
+    "",
+    "## Closed loops only",
+    "[Source: web]",
+    "The boundary must be one closed loop with no gaps or overlapping lines. If it isn't, Revit shows an error and keeps you in sketch mode: look for a short gap at a corner or a doubled line.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Create the ground-floor slab under your exterior walls with Pick Walls. Aim for 10 minutes."
+  ],
+  "planted_errors": [
+    {
+      "quote": "Click **Finish Edit Mode** (the green check mark) to enter sketch mode.",
+      "correct": "Choosing the Floor tool enters sketch mode; Finish Edit Mode is the LAST step, after the boundary is sketched.",
+      "kind": "step_order",
+      "why": "The source's order is: Floor tool (enters sketch mode), type, sketch boundary, then Finish Edit Mode.",
+      "also_matches": [
+        "4. Pick the floor type in the Type Selector.",
+        "5. On the Draw panel, use **Pick Walls** and click each exterior wall."
+      ]
+    }
+  ]
+}

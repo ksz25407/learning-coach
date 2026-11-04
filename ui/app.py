@@ -4,8 +4,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so imports work from ui/
 
-import json
-
 import anthropic
 import streamlit as st
 
@@ -37,6 +35,72 @@ def show_chat(profile_id, stage=None):
     for row in store.get_chat(conn, profile_id, stage):
         with st.chat_message(row["role"]):
             st.markdown(row["content"])
+
+
+def flag_line(f) -> str:
+    who = "Fact-checker" if f["checker"] == "fact" else "Pedagogy reviewer"
+    return f"**{who}** ({f['kind']}): “{f['quote']}”  \n{f['problem']}  \n_Evidence: {f['evidence']}_"
+
+
+def show_status(lesson, review):
+    """Status box above the lesson. Flagged lessons list their remaining problems on top."""
+    status = store.lesson_status(lesson)
+    if status == "verified":
+        st.success("Every section was checked against its sources and passed.", title="Verified",
+                   icon=":material/verified:")
+    elif status == "partly_unsourced":
+        st.info("Passed the checks. Sections marked [Source: model] have no source: they were "
+                "checked against the Fact-checker's own knowledge only.",
+                title="Checked (partly unsourced)", icon=":material/rule:")
+    elif status == "flagged":
+        rounds = review.get("revisions", 0)
+        problems = "\n\n".join(flag_line(f) for f in review.get("remaining_major", []))
+        st.error(f"Still has problems after {rounds} rewrite(s). Read these parts with care:\n\n{problems}",
+                 title="Flagged", icon=":material/flag:")
+    else:
+        why = f" The checks stopped: {review['error']}" if review.get("error") else ""
+        st.warning(f"Not checked yet. Use 'Run checks' to fact-check it.{why}", title="Unchecked",
+                   icon=":material/warning:")
+
+
+def show_review_details(review):
+    if not review.get("rounds"):
+        return
+    with st.expander(f"Review details ({len(review.get('minor', []))} minor notes, "
+                     f"{review.get('revisions', 0)} rewrite(s))"):
+        for f in review.get("minor", []):
+            st.markdown("- " + flag_line(f).replace("  \n", " · "))
+        for r in review["rounds"]:
+            majors = [f for f in r["flags"] if f["severity"] == "major"]
+            st.markdown(f"**Round {r['round'] + 1}:** {len(majors)} major, "
+                        f"{len(r['flags']) - len(majors)} minor flag(s)")
+
+
+def show_quiz(quiz, review):
+    if review.get("quiz_error"):
+        st.warning(f"No quiz: {review['quiz_error']}", icon=":material/quiz:")
+    if quiz is None:
+        return
+    st.markdown("#### Quick quiz")
+    if quiz["flagged"]:
+        st.warning(f"Only {len(quiz['questions'])} question(s) survived the Quiz solver's check.",
+                   icon=":material/flag:")
+    for i, q in enumerate(quiz["questions"], 1):
+        st.markdown(f"**{i}. {q['question']}**")
+        if q["kind"] == "multiple_choice":
+            st.markdown("  \n".join(f"{chr(65 + j)}. {c}" for j, c in enumerate(q["choices"])))
+        elif q["kind"] == "numeric" and q.get("unit"):
+            st.caption(f"Answer in {q['unit']}")
+    if quiz["questions"]:
+        with st.expander("Show answers"):
+            for i, q in enumerate(quiz["questions"], 1):
+                unit = f" {q['unit']}" if q.get("unit") else ""
+                st.markdown(f"**{i}.** {q['answer']}{unit}: {q['explanation']}")
+    if quiz["dropped"]:
+        with st.expander(f"Dropped questions ({len(quiz['dropped'])})"):
+            for q in quiz["dropped"]:
+                st.markdown(f"- {q['question']}  \n  Key: {q['answer']} · Solver: {q['solver_answer']} "
+                            f"· {q['reason']}. {q['solver_note']}")
 
 
 # ---------------- sidebar ----------------
@@ -207,7 +271,8 @@ elif stage == "learning":
         m = store.get_milestone(conn, mid)
         st.subheader(f"Lesson: {m['title']}")
         if store.get_lesson(conn, mid) is None:
-            with st.spinner("Curator is searching and Teacher is writing (can take a minute or two)..."):
+            with st.spinner("Curator is searching, Teacher is writing, checkers are reviewing "
+                            "(can take a few minutes)..."):
                 lesson = run_safely(coach.request_lesson, mid)
             if lesson is None:
                 st.session_state.open_milestone = None
@@ -227,22 +292,25 @@ elif stage == "learning":
         with st.container(horizontal=True, vertical_alignment="center"):
             if store.lesson_is_outdated(conn, mid):
                 st.badge("Outdated: written before current sources", icon=":material/history:", color="orange")
-            est = coach.estimate_lesson_cost(m["profile_id"])
-            if st.button(f"Regenerate with current sources (~${est:.2f})", key=f"regen{mid}",
-                         icon=":material/refresh:"):
-                with st.spinner("Regenerating (the old lesson stays until the new one is ready)..."):
+            typical, worst = coach.estimate_lesson_cost(m["profile_id"])
+            if st.button(f"Regenerate with current sources (~${typical:.2f}, max ${worst:.2f})",
+                         key=f"regen{mid}", icon=":material/refresh:"):
+                with st.spinner("Regenerating and checking (the old lesson stays until the new one is ready)..."):
                     run_safely(coach.request_lesson, mid, True)
                 st.rerun()
+            if store.lesson_status(lesson) == "unchecked":
+                typical, worst = coach.estimate_check_cost(m["profile_id"])
+                if st.button(f"Run checks (~${typical:.2f}, max ${worst:.2f})", key=f"check{mid}",
+                             icon=":material/fact_check:"):
+                    with st.spinner("Fact-checker and Pedagogy reviewer are checking..."):
+                        run_safely(coach.run_checks, mid)
+                    st.rerun()
 
-        cited = json.loads(lesson["citations_json"] or "[]")
-        if not lesson["verified"]:
-            if cited:
-                st.warning("Cited from the sources below, but not yet fact-checked.", title="Unverified",
-                           icon=":material/warning:")
-            else:
-                st.warning("Written from the model's own knowledge, not yet fact-checked. "
-                           "Double-check important details.", title="Unverified", icon=":material/warning:")
+        review = store.lesson_review(lesson) or {}
+        show_status(lesson, review)
         st.markdown(lesson["content"])
+        show_review_details(review)
+        show_quiz(store.get_quiz(conn, mid), review)
 
         notes = store.lesson_notes(lesson)
         if notes is not None:

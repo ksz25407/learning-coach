@@ -1,0 +1,36 @@
+{
+  "id": "circuits_ohm_power",
+  "subject": "circuits",
+  "milestone": {"title": "Ohm's law and power", "objective": "Compute voltage, current, resistance and power for a single resistor, with units, in under 2 minutes per problem", "est_hours": 1},
+  "sources": [
+    {"kind": "pdf", "ref": "circuits-notes.pdf p.3", "title": "Course notes p.3 (fixture)",
+     "text": "Ohm's law: V = I R, where V is the voltage across the resistor in volts (V), I the current through it in amperes (A) and R the resistance in ohms. The power dissipated by a resistor is P = V I. Substituting Ohm's law gives P = I^2 R = V^2 / R. Power is measured in watts (W). Example: a current of 2 A through a 10 ohm resistor gives V = 2 x 10 = 20 V and P = 2^2 x 10 = 40 W. Example: 12 V across a 6 ohm resistor gives I = 12 / 6 = 2 A and P = 12^2 / 6 = 24 W."}
+  ],
+  "lesson_lines": [
+    "## Ohm's law",
+    "[Source: pdf]",
+    "**V = I R**: voltage across the resistor (V) equals current through it (A) times its resistance (Ω). Rearranged: I = V / R and R = V / I.",
+    "",
+    "## Power",
+    "[Source: pdf]",
+    "A resistor turns electrical power into heat: **P = V I**. With Ohm's law you get two more forms: P = I² R and P = V² / R. Power is in watts (W).",
+    "",
+    "Example: 2 A through 10 Ω. Then V = 2 × 10 = 20 V and P = 2² × 10 = 20 W.",
+    "",
+    "Example: 12 V across 6 Ω. Then I = 12 / 6 = 2 A and P = 12² / 6 = 24 W.",
+    "",
+    "## Quick intuition",
+    "[Source: model]",
+    "Pick the power formula that uses the two quantities you already know. Doubling the voltage across a fixed resistor doubles the power it dissipates.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Solve: 9 V across 450 Ω. Find I and P, with units."
+  ],
+  "planted_errors": [
+    {"quote": "P = 2² × 10 = 20 W", "correct": "P = 2² × 10 = 40 W", "kind": "wrong_value",
+     "why": "2² × 10 = 40; the source example gives 40 W."},
+    {"quote": "Doubling the voltage across a fixed resistor doubles the power it dissipates.", "correct": "Doubling the voltage across a fixed resistor quadruples the power (P = V²/R).", "kind": "subtle_claim",
+     "why": "Planted in a [Source: model] section: tests the own-knowledge check. P = V²/R, so 2V gives 4P."}
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "circuits_series_parallel",
+  "subject": "circuits",
+  "milestone": {"title": "Series and parallel resistors", "objective": "Reduce a series-parallel resistor network to one equivalent resistance in under 5 minutes", "est_hours": 2},
+  "sources": [
+    {"kind": "pdf", "ref": "circuits-notes.pdf p.5", "title": "Course notes p.5 (fixture)",
+     "text": "Resistors in series carry the same current. Their equivalent resistance is the sum: Req = R1 + R2 + ... Resistors in parallel have the same voltage across them. Their equivalent resistance satisfies 1/Req = 1/R1 + 1/R2 + ... For two resistors this is Req = R1 R2 / (R1 + R2). The equivalent resistance of a parallel combination is always smaller than the smallest resistor in it. Example: 100 ohm in parallel with 400 ohm gives Req = 100 x 400 / 500 = 80 ohm. To reduce a network, combine the innermost series or parallel groups first and work outwards."}
+  ],
+  "lesson_lines": [
+    "## Series",
+    "[Source: pdf]",
+    "Series resistors carry the **same current**. Add them: Req = R1 + R2 + …",
+    "",
+    "## Parallel",
+    "[Source: pdf]",
+    "Parallel resistors have the **same voltage** across them. Use 1/Req = 1/R1 + 1/R2 + …, or for two resistors the product over sum: Req = R1 R2 / (R1 + R2).",
+    "",
+    "Example: 100 Ω ∥ 400 Ω gives Req = (100 × 400) / (100 + 400) = 75 Ω.",
+    "",
+    "A useful check: the equivalent resistance of a parallel combination always lies between the smallest and the largest resistor.",
+    "",
+    "## Reducing a network",
+    "[Source: pdf]",
+    "Combine the innermost series or parallel groups first, redraw, and work outwards until one resistor is left.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Reduce: 220 Ω in series with (330 Ω ∥ 680 Ω). Give Req in Ω."
+  ],
+  "planted_errors": [
+    {"quote": "= 75 Ω", "correct": "= 80 Ω", "kind": "wrong_value",
+     "why": "100 × 400 / 500 = 80 Ω (also in the source)."},
+    {"quote": "always lies between the smallest and the largest resistor", "correct": "is always smaller than the smallest resistor", "kind": "subtle_claim",
+     "why": "The source says a parallel Req is always smaller than the smallest resistor."}
+  ]
+}

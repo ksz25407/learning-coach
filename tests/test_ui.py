@@ -69,6 +69,45 @@ def test_lesson_view_shows_sources(tmp_path, monkeypatch):
     page = " ".join(m.value for m in at.markdown)
     assert "Walls guide" in page and "Over 30 min" in page
     assert "pages 3, 7" in page and "HTTP 404" in page
-    assert any("Cited from the sources" in w.value for w in at.warning)
+    assert any("Not checked yet" in w.value for w in at.warning)
     assert any(b.label.startswith("Regenerate with current sources (~$") for b in at.button)
+    assert any(b.label.startswith("Run checks (~$") for b in at.button)
     assert any("Outdated" in str(e.proto) for e in at.get("badge")) or "Outdated" in page
+
+
+def test_flagged_lesson_shows_problems_and_quiz(tmp_path, monkeypatch):
+    """A flagged lesson lists its remaining problems on top; the quiz shows survivors + drops."""
+    from db import store
+    from tests.test_agents import PROFILE
+
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "ui.sqlite")
+    conn = store.connect(config.DB_PATH)
+    pid = store.create_profile(conn)
+    store.save_profile_data(conn, pid, PROFILE)
+    store.set_stage(conn, pid, "learning")
+    store.save_milestones(conn, pid, [{"title": "Walls", "objective": "Model walls", "est_hours": 2}] * 4)
+    mid = store.get_milestones(conn, pid)[0]["id"]
+    flag = {"checker": "fact", "quote": "Walls are 3 m thick", "problem": "Wrong thickness",
+            "evidence": "Source: 300 mm", "kind": "source", "severity": "major", "quote_found": True}
+    store.save_lesson(conn, mid, "## Walls\n[Source: web]\nWalls are 3 m thick[1].", [], "m",
+                      notes={}, status="flagged", revision_rounds=2,
+                      review={"rounds": [{"round": r, "flags": [flag]} for r in range(3)], "revisions": 2,
+                              "remaining_major": [flag], "minor": []})
+    q = {"id": "q1", "kind": "exact_term", "question": "Which tool draws walls?", "choices": [],
+         "answer": "Wall", "unit": "", "tolerance_pct": 0, "alternates": [], "explanation": "See step 1."}
+    store.save_quiz(conn, mid, [q], [{**q, "id": "q2", "question": "Odd one?", "solver_answer": "Floor",
+                                      "solver_note": "", "reason": "solver's answer differs from the key",
+                                      "draft": 0}], redrafts=2, flagged=True)
+    conn.close()
+
+    at = AppTest.from_file(str(config.ROOT / "ui" / "app.py"), default_timeout=30)
+    at.session_state["profile_id"] = pid
+    at.session_state["open_milestone"] = mid
+    at.run()
+    assert not at.exception
+    assert any("after 2 rewrite(s)" in e.value and "Walls are 3 m thick" in e.value for e in at.error)
+    assert not any(b.label.startswith("Run checks") for b in at.button)  # already checked
+    page = " ".join(m.value for m in at.markdown)
+    assert "Which tool draws walls?" in page
+    assert "Odd one?" in page and "Solver: Floor" in page
+    assert any("Only 1 question(s) survived" in w.value for w in at.warning)

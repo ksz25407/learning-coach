@@ -1,0 +1,33 @@
+{
+  "id": "revit_levels_grids",
+  "subject": "revit",
+  "milestone": {"title": "Levels and grids", "objective": "Set up 3 levels and a 4x3 structural grid from a sketch in 15 minutes", "est_hours": 1.5},
+  "sources": [
+    {"kind": "web", "ref": "fixture://revit-help/levels", "title": "Revit Help: Levels (fixture)",
+     "text": "Levels are horizontal planes that act as references for elements such as walls, floors and roofs. To add a level, open an elevation or section view: levels cannot be created in a plan view. On the Architecture tab, Datum panel, click Level (keyboard shortcut LL). Click to start the level line, then click to end it. In the Options Bar, keep Make Plan View selected so Revit creates a floor plan view for the new level. Double-click the level name or elevation value to edit it."},
+    {"kind": "web", "ref": "fixture://revit-help/grids", "title": "Revit Help: Grids (fixture)",
+     "text": "Grids are vertical datum planes used to place structural elements. On the Architecture tab, Datum panel, click Grid (keyboard shortcut GR). Grids are usually drawn in a plan view. Revit numbers grid heads automatically: the first grid is 1, the next 2, and so on. If you rename a grid head to a letter, for example A, the next grid you draw continues with B. Draw the numbered grids in one direction and the lettered grids at right angles to them."}
+  ],
+  "lesson_lines": [
+    "## Levels",
+    "[Source: web]",
+    "Levels are horizontal reference planes for walls, floors and roofs. You can only add them in an elevation or section view, not in a plan view.",
+    "",
+    "1. Open the South elevation.",
+    "2. On the Architecture tab, Datum panel, click **Level** (shortcut LL).",
+    "3. Keep **Make Plan View** selected in the Options Bar, so Revit creates a floor plan for the new level.",
+    "4. Click to start the level line and click again to end it.",
+    "5. Double-click the name or the elevation value to rename it or change its height.",
+    "",
+    "## Grids",
+    "[Source: web]",
+    "Grids are vertical datum planes for placing columns and beams. Draw them in a plan view with **Grid** (Architecture tab, Datum panel, shortcut GR).",
+    "",
+    "Revit numbers grid heads for you: 1, 2, 3 and so on. Draw the four numbered grids first. Then draw the first grid at right angles, rename its head to A, and the next ones continue as B and C.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "From your sketch, create Level 1, Level 2 and Roof, then a 4x3 grid (1-4 and A-C) in Level 1. Time yourself: aim for 15 minutes."
+  ],
+  "planted_errors": []
+}

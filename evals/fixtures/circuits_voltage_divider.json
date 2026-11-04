@@ -1,0 +1,32 @@
+{
+  "id": "circuits_voltage_divider",
+  "subject": "circuits",
+  "milestone": {"title": "Voltage dividers", "objective": "Design and analyse a two-resistor voltage divider, with and without a load, in under 5 minutes", "est_hours": 2},
+  "sources": [
+    {"kind": "web", "ref": "fixture://ee-notes/voltage-divider", "title": "EE notes: Voltage divider (fixture)",
+     "text": "A voltage divider is two resistors in series across a source Vin. The output Vout is taken across the bottom resistor R2: Vout = Vin x R2 / (R1 + R2). Example: Vin = 12 V, R1 = 10 kilohm, R2 = 5 kilohm gives Vout = 12 x 5 / 15 = 4 V. When a load resistor RL is connected across R2, it is in parallel with R2, so the lower part of the divider has a smaller resistance and Vout drops below the unloaded value. To keep the drop small, choose RL much larger than R2, at least 10 times."}
+  ],
+  "lesson_lines": [
+    "## The divider formula",
+    "[Source: web]",
+    "Two resistors in series across Vin. The output is taken across the bottom resistor R2:",
+    "",
+    "**Vout = Vin × R2 / (R1 + R2)**",
+    "",
+    "Example: Vin = 12 V, R1 = 10 kΩ, R2 = 5 kΩ: Vout = 12 × 5 / 15 = 6 V.",
+    "",
+    "## Loading",
+    "[Source: web]",
+    "A load RL across the output sits in parallel with R2. Connecting it raises Vout slightly, because the current now has an extra path. Keep RL at least 10 times larger than R2 so the change stays small.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Design a divider that makes 3.3 V from 5 V using R1 = 1 kΩ. Find R2, then find Vout with a 10 kΩ load."
+  ],
+  "planted_errors": [
+    {"quote": "Vout = 12 × 5 / 15 = 6 V", "correct": "Vout = 12 × 5 / 15 = 4 V", "kind": "wrong_value",
+     "why": "12 × 5 / 15 = 4 V, as in the source."},
+    {"quote": "Connecting it raises Vout slightly", "correct": "Connecting it lowers Vout", "kind": "subtle_claim",
+     "why": "RL in parallel with R2 lowers the bottom resistance, so Vout drops (source)."}
+  ]
+}

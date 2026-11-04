@@ -1,0 +1,35 @@
+{
+  "id": "revit_walls",
+  "subject": "revit",
+  "milestone": {"title": "Ground-floor walls", "objective": "Model the ground-floor walls from a sketch in 20 minutes", "est_hours": 2},
+  "sources": [
+    {"kind": "web", "ref": "fixture://revit-help/walls", "title": "Revit Help: Architectural walls (fixture)",
+     "text": "To create an architectural wall, on the Architecture tab, Build panel, click the Wall drop-down and choose Wall: Architectural (keyboard shortcut WA). In the Type Selector, choose the wall type. In the Options Bar, set Height to the level the wall should reach, for example Level 2, or to Unconnected with a fixed height. The Location Line option sets which plane of the wall follows your cursor: Wall Centerline, Core Centerline, Finish Face: Exterior, Finish Face: Interior, Core Face: Exterior or Core Face: Interior. Select Chain to draw a series of connected walls. Draw exterior walls clockwise: Revit puts the exterior face of the wall on the left side of the drawing direction, so a clockwise loop places the exterior face outside. Press the Spacebar while drawing to flip the wall's orientation."}
+  ],
+  "lesson_lines": [
+    "## Start the Wall tool",
+    "[Source: web]",
+    "On the Architecture tab, Build panel, open the Wall drop-down and choose **Wall: Architectural** (shortcut WL). Pick your exterior wall type in the Type Selector.",
+    "",
+    "## Options Bar settings",
+    "[Source: web]",
+    "- **Height:** choose Level 2 so the walls reach the next floor. Use Unconnected only when you need a fixed height.",
+    "- **Location Line:** sets which plane of the wall follows your cursor. For exterior walls drawn from a sketch measured to the outside, use Finish Face: Exterior. The other options are Wall Centerline, Core Centerline, Finish Face: Interior, Core Face: Exterior and Core Face: Interior.",
+    "- **Chain:** keep it on to draw connected walls in one go.",
+    "",
+    "## Draw in the right direction",
+    "[Source: web]",
+    "Draw the outside walls counter-clockwise, so the exterior face ends up on the outside. If a wall comes out flipped, press the Spacebar while drawing it.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Trace the ground-floor walls from your sketch: exterior walls first in one chained loop, then the interior walls. Aim for 20 minutes."
+  ],
+  "planted_errors": [
+    {"quote": "(shortcut WL)", "correct": "(shortcut WA)", "kind": "wrong_name",
+     "why": "The source gives WA as the keyboard shortcut for Wall: Architectural."},
+    {"quote": "Draw the outside walls counter-clockwise, so the exterior face ends up on the outside.",
+     "correct": "Draw the outside walls clockwise, so the exterior face ends up on the outside.", "kind": "subtle_claim",
+     "why": "Revit puts the exterior face on the left of the drawing direction, so only a clockwise loop puts it outside."}
+  ]
+}

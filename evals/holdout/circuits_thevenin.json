@@ -1,0 +1,36 @@
+{
+  "id": "circuits_thevenin",
+  "subject": "circuits",
+  "milestone": {"title": "Thevenin equivalents", "objective": "Find the Thevenin equivalent of a one-source resistor network in under 10 minutes", "est_hours": 3},
+  "sources": [
+    {"kind": "pdf", "ref": "circuits-notes.pdf p.12", "title": "Course notes p.12 (fixture)",
+     "text": "Any linear network seen from two terminals can be replaced by a voltage source Vth in series with a resistance Rth. Vth is the open-circuit voltage between the terminals. To find Rth for a network with only independent sources, turn the sources off: replace each voltage source with a short circuit and each current source with an open circuit, then find the resistance seen from the terminals. Example: a 12 V source with R1 = 4 kilohm in series and R2 = 12 kilohm across the terminals. Vth = 12 x 12 / (4 + 12) = 9 V. With the source shorted, R1 and R2 are in parallel: Rth = 4 x 12 / (4 + 12) = 3 kilohm."}
+  ],
+  "lesson_lines": [
+    "## The idea",
+    "[Source: pdf]",
+    "Seen from two terminals, any linear network acts like one voltage source **Vth** in series with one resistance **Rth**.",
+    "",
+    "## Finding Vth and Rth",
+    "[Source: pdf]",
+    "- **Vth** is the open-circuit voltage between the terminals.",
+    "- **Rth**: turn the independent sources off. Replace each voltage source with an open circuit and each current source with a short circuit, then find the resistance seen from the terminals.",
+    "",
+    "## Worked example",
+    "[Source: pdf]",
+    "12 V source, R1 = 4 kΩ in series, R2 = 12 kΩ across the terminals.",
+    "",
+    "- Vth = 12 × 12 / (4 + 12) = 9 V",
+    "- Rth = 4 kΩ + 12 kΩ = 16 kΩ",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Find the Thevenin equivalent of a 9 V source with 1 kΩ in series and 2.2 kΩ across the output."
+  ],
+  "planted_errors": [
+    {"quote": "Replace each voltage source with an open circuit and each current source with a short circuit", "correct": "Replace each voltage source with a short circuit and each current source with an open circuit", "kind": "subtle_claim",
+     "why": "Swapped: a zero-volt source is a short, a zero-amp source is an open (source)."},
+    {"quote": "Rth = 4 kΩ + 12 kΩ = 16 kΩ", "correct": "Rth = 4 kΩ ∥ 12 kΩ = 3 kΩ", "kind": "wrong_value",
+     "why": "With the source shorted, R1 and R2 are in parallel: 4 × 12 / 16 = 3 kΩ."}
+  ]
+}

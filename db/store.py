@@ -11,6 +11,9 @@ SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
 NEW_COLUMNS = [
     ("lessons", "citations_json", "TEXT"),
     ("lessons", "notes_json", "TEXT"),
+    ("lessons", "status", "TEXT"),
+    ("lessons", "review_json", "TEXT"),
+    ("lessons", "revision_rounds", "INTEGER"),
 ]
 
 
@@ -93,6 +96,7 @@ def delete_profile(conn, profile_id: int):
         conn.execute(f"DELETE FROM review_schedule WHERE lesson_id IN ({lesson_ids})", (profile_id,))
         conn.execute(f"DELETE FROM lessons WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM quiz_results WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM quizzes WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM objectives WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute("DELETE FROM milestones WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM chat_messages WHERE profile_id = ?", (profile_id,))
@@ -169,20 +173,41 @@ def set_milestone_status(conn, milestone_id: int, status: str):
 
 # ---------- lessons ----------
 
+LESSON_STATUSES = ("unchecked", "verified", "partly_unsourced", "flagged")
+
+
 def save_lesson(conn, milestone_id: int, content: str, sources: list[dict], model: str,
-                verified=False, citations: list[dict] | None = None, notes: dict | None = None):
-    """Insert the lesson, or replace the existing one for this milestone (Regenerate)."""
+                citations: list[dict] | None = None, notes: dict | None = None,
+                status: str = "unchecked", review: dict | None = None, revision_rounds: int = 0):
+    """Insert the lesson, or replace the existing one for this milestone (Regenerate).
+
+    verified = 1 only for status "verified" (every section passed a source check).
+    """
+    assert status in LESSON_STATUSES, status
     conn.execute(
         "INSERT INTO lessons (milestone_id, content, verified, sources_json, model, created_at,"
-        " citations_json, notes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        " citations_json, notes_json, status, review_json, revision_rounds)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         " ON CONFLICT(milestone_id) DO UPDATE SET content = excluded.content,"
         " verified = excluded.verified, sources_json = excluded.sources_json,"
         " model = excluded.model, created_at = excluded.created_at,"
-        " citations_json = excluded.citations_json, notes_json = excluded.notes_json",
-        (milestone_id, content, int(verified), json.dumps(sources), model, now(),
-         json.dumps(citations or []), json.dumps(notes) if notes is not None else None),
+        " citations_json = excluded.citations_json, notes_json = excluded.notes_json,"
+        " status = excluded.status, review_json = excluded.review_json,"
+        " revision_rounds = excluded.revision_rounds",
+        (milestone_id, content, int(status == "verified"), json.dumps(sources), model, now(),
+         json.dumps(citations or []), json.dumps(notes) if notes is not None else None,
+         status, json.dumps(review) if review is not None else None, revision_rounds),
     )
     conn.commit()
+
+
+def lesson_status(lesson) -> str:
+    """Status of a lesson row; lessons from before Phase 3 count as unchecked."""
+    return lesson["status"] or "unchecked"
+
+
+def lesson_review(lesson) -> dict | None:
+    return json.loads(lesson["review_json"]) if lesson["review_json"] else None
 
 
 def get_lesson(conn, milestone_id: int):
@@ -207,6 +232,34 @@ def lesson_is_outdated(conn, milestone_id: int) -> bool:
         " WHERE m.id = ?", (milestone_id,)
     ).fetchone()[0]
     return newest is not None and newest > lesson["created_at"]
+
+
+# ---------- quizzes ----------
+
+def save_quiz(conn, milestone_id: int, questions: list[dict], dropped: list[dict],
+              redrafts: int, flagged: bool):
+    conn.execute(
+        "INSERT INTO quizzes (milestone_id, questions_json, dropped_json, redrafts, flagged, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)"
+        " ON CONFLICT(milestone_id) DO UPDATE SET questions_json = excluded.questions_json,"
+        " dropped_json = excluded.dropped_json, redrafts = excluded.redrafts,"
+        " flagged = excluded.flagged, created_at = excluded.created_at",
+        (milestone_id, json.dumps(questions), json.dumps(dropped), redrafts, int(flagged), now()),
+    )
+    conn.commit()
+
+
+def get_quiz(conn, milestone_id: int) -> dict | None:
+    row = conn.execute("SELECT * FROM quizzes WHERE milestone_id = ?", (milestone_id,)).fetchone()
+    if row is None:
+        return None
+    return {"questions": json.loads(row["questions_json"]), "dropped": json.loads(row["dropped_json"]),
+            "redrafts": row["redrafts"], "flagged": bool(row["flagged"]), "created_at": row["created_at"]}
+
+
+def delete_quiz(conn, milestone_id: int):
+    conn.execute("DELETE FROM quizzes WHERE milestone_id = ?", (milestone_id,))
+    conn.commit()
 
 
 # ---------- Curator resources ----------
@@ -307,12 +360,14 @@ def total_spend(conn) -> float:
     return conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM usage_log").fetchone()[0]
 
 
-def month_spend(conn, today: datetime | None = None) -> float:
+def month_spend(conn, today: datetime | None = None, agent: str | None = None) -> float:
+    """This month's spend, for all agents or just one."""
     today = today or datetime.now()
     month_start = today.strftime("%Y-%m-01")
-    return conn.execute(
-        "SELECT COALESCE(SUM(cost_usd), 0) FROM usage_log WHERE ts >= ?", (month_start,)
-    ).fetchone()[0]
+    sql, args = "SELECT COALESCE(SUM(cost_usd), 0) FROM usage_log WHERE ts >= ?", [month_start]
+    if agent is not None:
+        sql, args = sql + " AND agent = ?", args + [agent]
+    return conn.execute(sql, args).fetchone()[0]
 
 
 def pdf_page_lengths(conn, profile_id: int) -> list[int]:

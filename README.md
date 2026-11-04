@@ -3,6 +3,7 @@
 A personal, local app that teaches any subject with a milestone plan.
 Phase 1: Scoper → Planner → Teacher, a simple Coach, Streamlit UI, SQLite and cost logging.
 Phase 2: Curator with web search, PDF uploads, and a Teacher that cites its sources.
+Phase 3: Fact-checker, Pedagogy reviewer, a minimal Examiner and a blind Quiz solver.
 
 ## Setup (Windows, PowerShell)
 
@@ -33,6 +34,19 @@ pytest
 
 Tests use a fake API client, so they cost nothing.
 
+### Fact-checker eval (real API, costs money)
+
+```powershell
+python evals/fact_check_eval.py --model opus     # 10 tuning lessons with planted errors
+python evals/fact_check_eval.py --model sonnet   # compare models
+python evals/fact_check_eval.py --holdout        # 3 held-out lessons: only after tuning
+python evals/fact_check_eval.py --list-errors    # rewrite evals/PLANTED_ERRORS.md (free)
+```
+
+Prints caught / missed / false alarms per lesson and saves the run to `evals/results/`.
+It won't start if this month's eval spend plus the run's worst case would pass
+`EVAL_MONTHLY_CAP_USD` ($3). The planted errors are listed in `evals/PLANTED_ERRORS.md`.
+
 ## How it works
 
 1. **New subject** → the Scoper asks up to 5 questions in chat.
@@ -40,7 +54,7 @@ Tests use a fake API client, so they cost nothing.
 3. The Planner writes 4–8 milestones, each with a testable objective.
 4. **Open lesson** → the Curator searches the web for 1–2 resources, the app downloads them,
    picks the best-matching pages of your PDFs, and the Teacher writes a cited lesson.
-   Lessons stay **Unverified** until the checkers arrive in Phase 3.
+   Then the checkers run (Phase 3, below).
 5. Tick **Mark done** to unlock the next milestone.
 
 ## Sources (Phase 2)
@@ -65,6 +79,25 @@ Tests use a fake API client, so they cost nothing.
   spend. All limits are in `config.py`.
 - When the database needs new columns, a backup copy is saved first as
   `db/coach.backup-<date-time>.sqlite`.
+
+## Checkers (Phase 3)
+
+- **Fact-checker** (Opus) and **Pedagogy reviewer** (Sonnet) run in parallel on every new lesson.
+  Every flag quotes the lesson and gives evidence; a flag whose quote isn't in the lesson only
+  counts as minor. Any **major** flag sends the lesson back to the Teacher (same sources), at
+  most 2 times. Minor flags are listed under *Review details*.
+- **Status** above each lesson: **Verified** (every section passed a source check),
+  **Checked (partly unsourced)** (passed, but `[Source: model]` sections were only checked against
+  the Fact-checker's own knowledge), **Flagged** (still has major problems after 2 rewrites; they
+  are listed at the top), or **Unchecked** (older lesson, or the checks couldn't finish).
+- **Run checks** on an unchecked lesson runs the checkers + quiz without a new web search.
+- **Quiz**: the Examiner (Haiku) writes 5 questions (multiple choice, numeric with unit, or exact
+  term). The Quiz solver (Sonnet) answers them from the lesson without seeing the key. Python
+  compares (units converted: 2.2 kΩ = 2200 Ω). Questions it answers differently are dropped and
+  listed under *Dropped questions*. Fewer than 3 left → the Examiner writes replacements (max 2
+  times). Grading your own answers comes in Phase 4.
+- The cost on **Regenerate** and **Run checks** shows the typical case (passes first time) and the
+  maximum (2 rewrites + 2 quiz redrafts).
 
 ## Settings
 

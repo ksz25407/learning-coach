@@ -1,0 +1,54 @@
+{
+  "id": "circuits_kirchhoff_nodal",
+  "subject": "circuits",
+  "milestone": {
+    "title": "Kirchhoff's laws and nodal analysis",
+    "objective": "Solve a circuit with two non-reference nodes using nodal analysis in under 10 minutes",
+    "est_hours": 3
+  },
+  "sources": [
+    {
+      "kind": "pdf",
+      "ref": "circuits-notes.pdf p.8",
+      "title": "Course notes p.8 (fixture)",
+      "text": "Kirchhoff's Current Law (KCL): the sum of the currents entering a node equals the sum of the currents leaving it. Kirchhoff's Voltage Law (KVL): the sum of the voltages around any closed loop is zero. Nodal analysis steps: 1. Choose a reference node (ground), usually the node with the most connections. 2. Label the voltage of every other node (V1, V2, ...) relative to the reference. 3. Write a KCL equation at each non-reference node, expressing each current with Ohm's law, for example (V1 - V2) / R. 4. Solve the equations for the node voltages. A circuit with n nodes gives n - 1 equations."
+    }
+  ],
+  "lesson_lines": [
+    "## Kirchhoff's two laws",
+    "[Source: pdf]",
+    "- **Kirchhoff's Voltage Law (KVL):** the currents entering a node add up to the currents leaving it.",
+    "- The voltages around any closed loop add up to zero.",
+    "",
+    "## Nodal analysis",
+    "[Source: pdf]",
+    "1. Write a KCL equation at each non-reference node, writing each current with Ohm's law, e.g. (V1 − V2) / R.",
+    "2. Choose a reference node (ground): usually the node with the most connections.",
+    "3. Label the voltage of every other node (V1, V2, …) relative to ground.",
+    "4. Solve the equations for the node voltages.",
+    "",
+    "A circuit with n nodes gives n − 1 equations.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Solve a circuit with two non-reference nodes (three nodes counting ground): find V1 and V2 with nodal analysis and check one KCL equation with your answers."
+  ],
+  "planted_errors": [
+    {
+      "quote": "**Kirchhoff's Voltage Law (KVL):** the currents entering a node add up to the currents leaving it.",
+      "correct": "Kirchhoff's Current Law (KCL): the currents entering a node add up to the currents leaving it.",
+      "kind": "wrong_name",
+      "why": "The node-current law is KCL, not KVL (source)."
+    },
+    {
+      "quote": "Write a KCL equation at each non-reference node, writing each current with Ohm's law",
+      "correct": "Choose the reference node and label node voltages FIRST; writing the KCL equations is step 3.",
+      "kind": "step_order",
+      "why": "The source order is: reference node, label voltages, write KCL, solve. You can't write the equations before labelling.",
+      "also_matches": [
+        "2. Choose a reference node (ground): usually the node with the most connections.",
+        "3. Label the voltage of every other node (V1, V2, …) relative to ground."
+      ]
+    }
+  ]
+}
