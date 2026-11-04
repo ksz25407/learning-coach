@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS lessons (
     verified     INTEGER NOT NULL DEFAULT 0,            -- 0 until the checkers pass it (Phase 3)
     sources_json TEXT NOT NULL,                         -- [{"kind": "model"|"pdf"|"web", "ref": ...}]
     model        TEXT,
-    created_at   TEXT NOT NULL
+    created_at   TEXT NOT NULL,
+    citations_json TEXT,                                -- Phase 2: numbered citations
+    notes_json     TEXT                                 -- Phase 2: pages picked, URLs skipped... (NULL = Phase 1 lesson)
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -73,4 +75,43 @@ CREATE TABLE IF NOT EXISTS review_schedule (
     lesson_id INTEGER NOT NULL REFERENCES lessons(id),
     due_at    TEXT NOT NULL,
     card_json TEXT                                      -- py-fsrs card state
+);
+
+-- Phase 2: sources ------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS pdf_uploads (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id   INTEGER NOT NULL REFERENCES profiles(id),
+    filename     TEXT NOT NULL,
+    page_from    INTEGER,                               -- optional range auto-pick searches in
+    page_to      INTEGER,
+    n_pages      INTEGER NOT NULL,
+    n_text_pages INTEGER NOT NULL,                      -- pages with a real text layer
+    uploaded_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pdf_pages (
+    upload_id INTEGER NOT NULL REFERENCES pdf_uploads(id),
+    page_no   INTEGER NOT NULL,                         -- 1-based, as printed by PDF viewers
+    text      TEXT NOT NULL,
+    PRIMARY KEY (upload_id, page_no)
+);
+
+CREATE TABLE IF NOT EXISTS resources (                  -- Curator picks, per milestone
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id INTEGER NOT NULL REFERENCES milestones(id),
+    position     INTEGER NOT NULL,
+    url          TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    kind         TEXT NOT NULL,                         -- page | video | pdf
+    section      TEXT,                                  -- exact section or timestamps
+    minutes      REAL,
+    why_best     TEXT,
+    role         TEXT NOT NULL                          -- primary | backup
+);
+
+CREATE TABLE IF NOT EXISTS web_pages (                  -- shared download cache (any subject)
+    url        TEXT PRIMARY KEY,
+    text       TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
 );

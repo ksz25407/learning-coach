@@ -3,8 +3,6 @@ from pydantic import ValidationError
 
 from agents.planner import MilestoneDraft, PlanDraft, PlanningFailed, check_plan, make_plan
 from agents.scoper import SubjectProfile
-from agents.sources import ModelKnowledgeSource, SourceChunk, merge_sources
-from agents.teacher import ensure_source_tags, write_lesson
 
 PROFILE = dict(subject="Revit", goal="Model a small off-grid house", level="beginner",
                hours_per_week=5, deadline="none", practice_type="software",
@@ -65,31 +63,3 @@ def test_planner_fails_after_two_bad_plans(llm, fake):
     with pytest.raises(PlanningFailed):
         make_plan(llm, PROFILE)
     assert len(fake.messages.calls) == 2  # no third attempt
-
-
-# ---------- Sources ----------
-
-def test_merge_sources_priority():
-    chunks = [SourceChunk("a", "model", "m"), SourceChunk("b", "web", "w"),
-              SourceChunk("c", "pdf", "p"), SourceChunk("d", "web", "w2")]
-    assert [c.text for c in merge_sources(chunks)] == ["c", "b", "d", "a"]
-
-
-def test_model_knowledge_source_is_empty():
-    assert ModelKnowledgeSource().get_chunks("obj", PROFILE) == []
-
-
-# ---------- Teacher ----------
-
-def test_ensure_source_tags_adds_missing():
-    text = "## Intro\nHello\n\n## Walls\n[Source: model]\nBody"
-    out = ensure_source_tags(text)
-    assert out.count("[Source: model]") == 2
-    assert out.splitlines()[1] == "[Source: model]"
-
-
-def test_teacher_lesson_tagged_and_sourced(llm, fake):
-    fake.messages.text_replies = ["## Step 1\nDo this.\n\n## Practice\nTry it."]
-    text, sources, model = write_lesson(llm, PROFILE, {"title": "Walls", "objective": "Model walls"})
-    assert text.count("[Source: model]") == 2
-    assert sources == [{"kind": "model", "ref": "claude-sonnet-5-5"}]

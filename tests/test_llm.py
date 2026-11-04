@@ -78,3 +78,31 @@ def test_system_blocks_cache_stable_prefix_only():
     assert '"a": 2, "b": 1' in blocks[1]["text"]  # sorted keys -> stable bytes
     assert blocks[1]["cache_control"] == {"type": "ephemeral"}
     assert "cache_control" not in blocks[2]  # milestone status etc. not cached
+
+
+# ---------- Phase 2: web search cost and pause_turn ----------
+
+def test_cost_includes_web_searches():
+    tokens_only = compute_cost("claude-haiku-5-5", usage(1000, 500))
+    with_search = compute_cost("claude-haiku-5-5", usage(1000, 500, searches=4))
+    assert with_search - tokens_only == pytest.approx(4 * config.WEB_SEARCH_USD)
+
+
+def test_pause_turn_is_continued(llm, fake, conn):
+    from tests.conftest import reply, text
+    fake.messages.text_replies = [reply(text("part 1 "), stop_reason="pause_turn"),
+                                  reply(text("part 2"))]
+    blocks, _ = llm.call_raw("curator_search", "sys", [{"role": "user", "content": "q"}])
+    assert [b.text for b in blocks] == ["part 1 ", "part 2"]
+    second = fake.messages.calls[1][1]["messages"]
+    assert second[-1]["role"] == "assistant"  # paused answer sent back to continue
+    assert conn.execute("SELECT COUNT(*) FROM usage_log").fetchone()[0] == 2  # both rounds logged
+
+
+def test_pause_turn_gives_up(llm, fake):
+    from tests.conftest import reply, text
+    fake.messages.text_replies = [reply(text("."), stop_reason="pause_turn")
+                                  for _ in range(config.PAUSE_TURN_MAX_ROUNDS)]
+    with pytest.raises(LLMError, match="still paused"):
+        llm.call_raw("curator_search", "sys", [{"role": "user", "content": "q"}])
+    assert len(fake.messages.calls) == config.PAUSE_TURN_MAX_ROUNDS

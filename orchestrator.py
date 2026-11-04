@@ -7,16 +7,20 @@ Python decides the stage. The LLM is only used inside agents and for free-form c
 while learning.
 """
 import config
-from agents import planner, scoper, teacher
+from agents import curator, planner, scoper, teacher
 from agents.planner import PlanningFailed  # noqa: F401  (re-exported for the UI)
 from db import store
+from llm import price_for
+from sources.pdf import PdfSource, ingest_pdf
+from sources.web import WebSource
 
 GREETING = "Hi! What would you like to learn? Tell me the subject and anything you already know about your goal."
 
 CHAT_SYSTEM = """You are the Coach in a personal learning app. The learner is working through a
 milestone plan. Answer their questions briefly and concretely, at their level. If a question
-belongs to a later milestone, say so and give a short answer. Lessons are generated from your
-own knowledge and are not yet fact-checked, so flag anything you are unsure about.
+belongs to a later milestone, say so and give a short answer. Lessons cite web pages and the
+learner's uploaded PDFs, but they are not yet fact-checked, and your chat answers come from
+your own knowledge, so flag anything you are unsure about.
 """
 
 
@@ -91,20 +95,61 @@ class Coach:
 
     # ---------- lessons ----------
 
-    def request_lesson(self, milestone_id: int):
-        """Return the lesson row. Generates it only the first time."""
+    def request_lesson(self, milestone_id: int, regenerate: bool = False):
+        """Return the lesson row. Generates it the first time, or again when regenerate=True.
+
+        Pipeline: Curator (web search, reused unless regenerating) -> download pages + pick
+        PDF pages -> Teacher (cited). On regenerate nothing is saved until the Teacher
+        succeeds, so a failed regenerate keeps the old lesson and resources.
+        """
         lesson = store.get_lesson(self.conn, milestone_id)
-        if lesson is not None:
+        if lesson is not None and not regenerate:
             return lesson
         m = store.get_milestone(self.conn, milestone_id)
         if m["status"] == "locked":
             raise ValueError("This milestone is locked. Finish the previous one first.")
-        profile = store.get_profile_data(self.conn, m["profile_id"])
-        text, sources, model = teacher.write_lesson(
-            self.llm, profile, dict(m), profile_id=m["profile_id"]
-        )
-        store.save_lesson(self.conn, milestone_id, text, sources, model, verified=False)
+        pid = m["profile_id"]
+        profile = store.get_profile_data(self.conn, pid)
+
+        curator_info = {"reused": True}
+        new_resources = None
+        if regenerate or not store.has_resources(self.conn, milestone_id):
+            new_resources, curator_info = curator.find_resources(self.llm, profile, dict(m), profile_id=pid)
+            resources = new_resources
+            if lesson is None:  # first lesson: keep the picks now, so a retry doesn't search again
+                store.save_resources(self.conn, milestone_id, new_resources)
+                new_resources = None
+        else:
+            resources = store.get_resources(self.conn, milestone_id)
+
+        pdf, web = PdfSource(self.conn, pid), WebSource(self.conn, resources)
+        result = teacher.write_lesson(self.llm, profile, dict(m), sources=[pdf, web], profile_id=pid)
+
+        if new_resources is not None:
+            store.save_resources(self.conn, milestone_id, new_resources)
+        notes = {"pdf": pdf.notes, "web": web.notes, "curator": curator_info}
+        store.save_lesson(self.conn, milestone_id, result.text, result.sources, result.model,
+                          verified=False, citations=result.citations, notes=notes)
         return store.get_lesson(self.conn, milestone_id)
+
+    # ---------- PDF sources ----------
+
+    def upload_pdf(self, profile_id: int, filename: str, data: bytes, page_from=None, page_to=None) -> str:
+        """Store a PDF's text for this subject. Returns a warning ('' if all is fine)."""
+        _, warning = ingest_pdf(self.conn, profile_id, filename, data, page_from, page_to)
+        return warning
+
+    def estimate_lesson_cost(self, profile_id: int) -> float:
+        """Rough upper estimate (USD) for one Curator + Teacher run."""
+        haiku, teacher_p = price_for(config.MODELS["curator"]), price_for(config.MODELS["teacher"])
+        curator_cost = (config.WEB_SEARCH_MAX_USES * config.WEB_SEARCH_USD
+                        + config.EST_CURATOR_INPUT_TOKENS * haiku["input"] / 1e6
+                        + 2 * config.MAX_TOKENS["curator"] * haiku["output"] / 1e6)
+        pdf_chars = sum(store.pdf_page_lengths(self.conn, profile_id)[: config.PDF_MAX_PAGES])
+        teacher_in = pdf_chars / 4 + 2 * config.PAGE_MAX_TOKENS + 2000  # PDF + 2 web pages + prompt
+        teacher_cost = (teacher_in * teacher_p["input"]
+                        + config.EST_TEACHER_OUTPUT_TOKENS * teacher_p["output"]) / 1e6
+        return curator_cost + teacher_cost
 
     def complete_milestone(self, milestone_id: int):
         """Mark done and unlock the next milestone (manual tick in Phase 1)."""

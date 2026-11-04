@@ -4,10 +4,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so imports work from ui/
 
+import json
+
 import anthropic
 import streamlit as st
 
 import config
+from agents.curator import is_long
 from agents.scoper import SubjectProfile
 from db import store
 from llm import LLM, BudgetExceeded, LLMError, RefusalError
@@ -42,7 +45,7 @@ with st.sidebar:
 
     profiles = store.list_profiles(conn)
     labels = {p["id"]: p["subject"] or f"New subject #{p['id']}" for p in profiles}
-    if st.button("+ New subject", use_container_width=True):
+    if st.button("+ New subject", width="stretch"):
         st.session_state.profile_id = coach.new_subject()
         st.session_state.open_milestone = None
         st.rerun()
@@ -58,7 +61,7 @@ with st.sidebar:
 
         # Delete needs two clicks: "Delete subject", then "Yes, delete".
         if st.session_state.get("confirm_delete") != pid:
-            if st.button("Delete subject", key="delete", use_container_width=True):
+            if st.button("Delete subject", key="delete", width="stretch"):
                 st.session_state.confirm_delete = pid
                 st.rerun()
         else:
@@ -73,6 +76,32 @@ with st.sidebar:
             if c2.button("Cancel", key="delete_cancel"):
                 st.session_state.confirm_delete = None
                 st.rerun()
+
+        # PDFs for this subject. They beat web pages and model knowledge in lessons.
+        with st.expander("PDF sources", icon=":material/picture_as_pdf:"):
+            for up in store.list_pdfs(conn, pid):
+                c1, c2 = st.columns([4, 1], vertical_alignment="center")
+                rng = ""
+                if up["page_from"] or up["page_to"]:
+                    rng = f", pages {up['page_from'] or 1}-{up['page_to'] or up['n_pages']}"
+                c1.caption(f"{up['filename']}: {up['n_text_pages']} text pages{rng}")
+                if c2.button("", key=f"rmpdf{up['id']}", icon=":material/delete:", help="Remove this PDF"):
+                    store.delete_pdf(conn, up["id"])
+                    st.rerun()
+            with st.form("pdf_upload", clear_on_submit=True):
+                pdf_file = st.file_uploader("Add a PDF", type="pdf")
+                c1, c2 = st.columns(2)
+                p_from = c1.number_input("From page", min_value=1, value=None, step=1,
+                                         help="Optional: only search these pages")
+                p_to = c2.number_input("To page", min_value=1, value=None, step=1)
+                if st.form_submit_button("Upload") and pdf_file is not None:
+                    warning = run_safely(coach.upload_pdf, pid, pdf_file.name, pdf_file.getvalue(),
+                                         p_from, p_to)
+                    if warning:
+                        st.session_state.pdf_warning = warning
+                    st.rerun()
+            if warning := st.session_state.pop("pdf_warning", None):
+                st.warning(warning)
 
     st.divider()
     month, total = store.month_spend(conn), store.total_spend(conn)
@@ -178,13 +207,64 @@ elif stage == "learning":
         m = store.get_milestone(conn, mid)
         st.subheader(f"Lesson: {m['title']}")
         if store.get_lesson(conn, mid) is None:
-            with st.spinner("Teacher is writing this lesson (can take a minute)..."):
+            with st.spinner("Curator is searching and Teacher is writing (can take a minute or two)..."):
                 lesson = run_safely(coach.request_lesson, mid)
             if lesson is None:
                 st.session_state.open_milestone = None
                 st.rerun()
         lesson = store.get_lesson(conn, mid)
+
+        # Curator's picks (videos included: shown to you, not taught from).
+        resources = [r for r in store.get_resources(conn, mid) if r["role"] == "primary"]
+        if resources:
+            with st.container(border=True):
+                st.markdown("**Recommended resources**")
+                for r in resources:
+                    long = " :orange-badge[Over 30 min]" if is_long(r) else ""
+                    st.markdown(f"[{r['title']}]({r['url']}) · {r['kind']} · ~{r['minutes']:g} min{long}  \n"
+                                f"_{r['section']}_  \n{r['why_best']}")
+
+        with st.container(horizontal=True, vertical_alignment="center"):
+            if store.lesson_is_outdated(conn, mid):
+                st.badge("Outdated: written before current sources", icon=":material/history:", color="orange")
+            est = coach.estimate_lesson_cost(m["profile_id"])
+            if st.button(f"Regenerate with current sources (~${est:.2f})", key=f"regen{mid}",
+                         icon=":material/refresh:"):
+                with st.spinner("Regenerating (the old lesson stays until the new one is ready)..."):
+                    run_safely(coach.request_lesson, mid, True)
+                st.rerun()
+
+        cited = json.loads(lesson["citations_json"] or "[]")
         if not lesson["verified"]:
-            st.warning("⚠️ Unverified: written from the model's own knowledge, not yet fact-checked. "
-                       "Double-check important details.")
+            if cited:
+                st.warning("Cited from the sources below, but not yet fact-checked.", title="Unverified",
+                           icon=":material/warning:")
+            else:
+                st.warning("Written from the model's own knowledge, not yet fact-checked. "
+                           "Double-check important details.", title="Unverified", icon=":material/warning:")
         st.markdown(lesson["content"])
+
+        notes = store.lesson_notes(lesson)
+        if notes is not None:
+            with st.expander("What this lesson used"):
+                used_any = False
+                for n in notes.get("pdf", []):
+                    if n["type"] == "pdf_pages":
+                        used_any = True
+                        st.markdown(f"PDF **{n['file']}**: pages {', '.join(map(str, n['pages']))}")
+                    else:
+                        st.markdown(f"PDF: {n['reason']}")
+                for n in notes.get("web", []):
+                    if n["type"] == "web_used":
+                        used_any = True
+                        backup = " (backup)" if n.get("role") == "backup" else ""
+                        st.markdown(f"Web: [{n['title']}]({n['url']}){backup}")
+                    else:
+                        st.markdown(f"Skipped {n['url']}: {n['reason']}")
+                cur = notes.get("curator", {})
+                for url in cur.get("dropped_urls", []):
+                    st.markdown(f"Dropped {url}: the Curator named it, but it wasn't in the search results")
+                for err in cur.get("search_errors", []):
+                    st.markdown(f"Web search error: {err}")
+                if not used_any:
+                    st.markdown("No source was usable, so this lesson comes from model knowledge.")

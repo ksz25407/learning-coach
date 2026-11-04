@@ -39,14 +39,22 @@ def price_for(model: str) -> dict:
     return max(config.PRICES.values(), key=lambda p: p["output"])
 
 
+def web_searches(usage) -> int:
+    """Number of web searches in this call (0 if the field is missing)."""
+    server = getattr(usage, "server_tool_use", None)
+    return (getattr(server, "web_search_requests", 0) or 0) if server else 0
+
+
 def compute_cost(model: str, usage) -> float:
+    """Token cost + web search fees, in USD."""
     p = price_for(model)
-    return (
+    tokens = (
         (usage.input_tokens or 0) * p["input"]
         + (usage.output_tokens or 0) * p["output"]
         + (getattr(usage, "cache_creation_input_tokens", 0) or 0) * p["cache_write"]
         + (getattr(usage, "cache_read_input_tokens", 0) or 0) * p["cache_read"]
     ) / 1_000_000
+    return tokens + web_searches(usage) * config.WEB_SEARCH_USD
 
 
 # ---------- client wrapper ----------
@@ -84,6 +92,25 @@ class LLM:
         self._finish(agent, response, profile_id)
         text = "".join(b.text for b in response.content if b.type == "text")
         return text, response.model
+
+    def call_raw(self, agent, system, messages, tools=None, profile=None, extra=None, profile_id=None):
+        """Return (content_blocks, model_that_answered). Keeps citations and tool blocks.
+
+        Server tools (web search) can pause a long turn (stop_reason "pause_turn"); we send
+        the partial answer back so the API continues it, up to PAUSE_TURN_MAX_ROUNDS times.
+        """
+        kwargs = self._build(agent, system, messages, profile, extra)
+        if tools:
+            kwargs["tools"] = tools
+        blocks = []
+        for _ in range(config.PAUSE_TURN_MAX_ROUNDS):
+            response = self.client.messages.create(**kwargs)
+            self._finish(agent, response, profile_id)
+            blocks.extend(response.content)
+            if response.stop_reason != "pause_turn":
+                return blocks, response.model
+            kwargs["messages"] = list(messages) + [{"role": "assistant", "content": blocks}]
+        raise LLMError(f"{agent}: still paused after {config.PAUSE_TURN_MAX_ROUNDS} rounds.")
 
     # --- internals ---
 

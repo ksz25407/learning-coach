@@ -1,11 +1,21 @@
 import pytest
 
 import config
+from agents.curator import CuratorDraft, ResourceDraft
 from agents.planner import PlanningFailed
 from agents.scoper import ScoperTurn, SubjectProfile
 from db import store
+from llm import RefusalError
 from orchestrator import Coach
+from sources import web
+from tests.conftest import reply, search_results, text
+from tests.helpers import FakeHTTP, FakeResponse, article_html, make_pdf
 from tests.test_agents import PROFILE, plan_draft
+
+
+def queue_lesson(fake, teacher_text="## Walls\nDraw walls."):
+    """Queue a Curator search that finds nothing, then the Teacher's reply."""
+    fake.messages.text_replies += [reply(text("Nothing useful found.")), teacher_text]
 
 
 @pytest.fixture
@@ -83,7 +93,7 @@ def test_locked_lesson_refused(coach, fake, conn):
 def test_lesson_generated_once(coach, fake, conn):
     pid = scope_to_learning(coach, fake)
     first = store.get_milestones(conn, pid)[0]
-    fake.messages.text_replies = ["## Walls\nDraw walls."]
+    queue_lesson(fake)
     lesson1 = coach.request_lesson(first["id"])
     calls_after_first = len(fake.messages.calls)
     lesson2 = coach.request_lesson(first["id"])
@@ -101,7 +111,7 @@ def test_delete_subject_removes_data_but_keeps_spend(coach, fake, conn):
     gone = scope_to_learning(coach, fake)
     for pid in (keep, gone):
         first = store.get_milestones(conn, pid)[0]
-        fake.messages.text_replies = ["## Walls\nDraw walls."]
+        queue_lesson(fake)
         coach.request_lesson(first["id"])
     gone_milestones = [m["id"] for m in store.get_milestones(conn, gone)]
     usage_before = count(conn, "usage_log")
@@ -145,3 +155,98 @@ def test_chat_sends_only_last_n(coach, fake, conn):
     assert len(sent) <= config.CHAT_HISTORY_LIMIT
     assert sent[0]["role"] == "user"
     assert sent[-1] == {"role": "user", "content": "new question"}
+
+
+# ---------- Phase 2: sources pipeline ----------
+
+URL = "https://docs.example.com/walls"
+
+
+def queue_curator_with_page(fake):
+    fake.messages.text_replies.append(reply(text("notes"), search_results({URL: "Walls guide"}), searches=1))
+    fake.messages.parse_replies.append(CuratorDraft(resources=[ResourceDraft(
+        url=URL, title="Walls guide", kind="page", section="Creating walls", minutes=12,
+        why_best="official docs", role="primary")]))
+
+
+def test_lesson_uses_curator_page_and_pdf(coach, fake, conn, monkeypatch):
+    http = FakeHTTP({URL: FakeResponse(article_html("Wall tool steps"))})
+    monkeypatch.setattr(web.requests, "get", http.get)
+    pid = scope_to_learning(coach, fake)
+    coach.upload_pdf(pid, "manual.pdf", make_pdf(["Ground floor walls: use the Wall tool. " * 5]))
+    mid = store.get_milestones(conn, pid)[0]["id"]
+
+    queue_curator_with_page(fake)
+    fake.messages.text_replies.append("## Walls\nDraw walls.")
+    lesson = coach.request_lesson(mid)
+
+    teacher_call = fake.messages.calls[-1][1]
+    docs = [b for b in teacher_call["messages"][0]["content"] if b["type"] == "document"]
+    assert [d["context"].split(".")[0] for d in docs] == ["Source kind: pdf", "Source kind: web"]
+    notes = store.lesson_notes(lesson)
+    assert notes["pdf"][0]["pages"] == [1]
+    assert notes["web"][0]["type"] == "web_used"
+    assert store.get_resources(conn, mid)[0]["url"] == URL
+    assert not store.lesson_is_outdated(conn, mid)
+
+
+def test_regenerate_failure_keeps_old_lesson(coach, fake, conn):
+    pid = scope_to_learning(coach, fake)
+    mid = store.get_milestones(conn, pid)[0]["id"]
+    queue_lesson(fake, "## Walls\nOld lesson.")
+    coach.request_lesson(mid)
+
+    queue_lesson(fake, "")
+    fake.messages.stop_reason = "refusal"  # the Teacher (and search) calls now refuse
+    with pytest.raises(RefusalError):
+        coach.request_lesson(mid, regenerate=True)
+    assert "Old lesson." in store.get_lesson(conn, mid)["content"]
+
+
+def test_regenerate_replaces_lesson(coach, fake, conn):
+    pid = scope_to_learning(coach, fake)
+    mid = store.get_milestones(conn, pid)[0]["id"]
+    queue_lesson(fake, "## Walls\nOld lesson.")
+    first = coach.request_lesson(mid)
+    queue_lesson(fake, "## Walls\nNew lesson.")
+    second = coach.request_lesson(mid, regenerate=True)
+    assert second["id"] == first["id"]
+    assert "New lesson." in second["content"]
+
+
+def test_curator_picks_reused_after_teacher_failure(coach, fake, conn, monkeypatch):
+    monkeypatch.setattr(web.requests, "get", FakeHTTP({}).get)
+    pid = scope_to_learning(coach, fake)
+    mid = store.get_milestones(conn, pid)[0]["id"]
+    queue_curator_with_page(fake)
+    fake.messages.text_replies.append(reply(text("cut off"), stop_reason="max_tokens"))
+    with pytest.raises(Exception):
+        coach.request_lesson(mid)  # Teacher fails...
+    assert store.get_lesson(conn, mid) is None
+    searches_before = sum(1 for c in fake.messages.calls if "tools" in c[1])
+
+    fake.messages.text_replies.append("## Walls\nDraw walls.")
+    coach.request_lesson(mid)  # ...retry reuses the Curator's picks: no new search
+    assert sum(1 for c in fake.messages.calls if "tools" in c[1]) == searches_before
+
+
+def test_cost_estimate_grows_with_pdf(coach, fake, conn):
+    pid = scope_to_learning(coach, fake)
+    base = coach.estimate_lesson_cost(pid)
+    assert base >= config.WEB_SEARCH_MAX_USES * config.WEB_SEARCH_USD
+    coach.upload_pdf(pid, "manual.pdf", make_pdf(["walls " * 400] * 5))
+    assert coach.estimate_lesson_cost(pid) > base
+
+
+def test_delete_subject_removes_pdfs_and_resources_keeps_web_cache(coach, fake, conn):
+    pid = scope_to_learning(coach, fake)
+    mid = store.get_milestones(conn, pid)[0]["id"]
+    coach.upload_pdf(pid, "manual.pdf", make_pdf(["Walls and more walls. " * 10]))
+    store.save_resources(conn, mid, [{"url": URL, "title": "t", "kind": "page", "role": "primary"}])
+    store.cache_page(conn, URL, "cached")
+
+    coach.delete_subject(pid)
+
+    assert count(conn, "pdf_uploads") == 0 and count(conn, "pdf_pages") == 0
+    assert count(conn, "resources") == 0
+    assert count(conn, "web_pages") == 1  # shared cache kept

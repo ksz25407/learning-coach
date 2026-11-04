@@ -1,8 +1,9 @@
-"""Where lesson material comes from. Pluggable so Phase 2 can add PDFs and web sources.
+"""Where lesson material comes from. Each source type is a small class with get_chunks().
 
-Rules (used from Phase 2 on):
-- Uploaded PDFs win over web sources, and both win over model knowledge when they conflict.
-- Every lesson section is labeled with its source kind: pdf, web or model.
+Rules:
+- Uploaded PDFs win over web pages, and both win over model knowledge when they conflict.
+- One chunk = one document the Teacher can cite (one PDF page, or one web page).
+- Every lesson section is labeled with the source kinds it actually cites: pdf, web or model.
 """
 from dataclasses import dataclass
 from typing import Literal
@@ -17,20 +18,27 @@ PRIORITY = {"pdf": 0, "web": 1, "model": 2}
 class SourceChunk:
     text: str
     kind: SourceKind
-    ref: str  # file name + page, URL + section, or model ID
+    ref: str  # "manual.pdf p.47", a URL, or a model ID
+    title: str = ""  # shown to the Teacher and in the Sources list (defaults to ref)
 
 
 class LessonSource:
-    """Base class. Each source type returns chunks relevant to one objective."""
+    """Base class. Each source type returns chunks relevant to one objective.
+
+    `notes` collects what happened (pages picked, URLs skipped and why) so the UI can show it.
+    """
 
     kind: SourceKind = "model"
+
+    def __init__(self):
+        self.notes: list[dict] = []
 
     def get_chunks(self, objective: str, profile: dict) -> list[SourceChunk]:
         raise NotImplementedError
 
 
 class ModelKnowledgeSource(LessonSource):
-    """Phase 1: no external material. The Teacher writes from its own knowledge."""
+    """No external material. The Teacher writes from its own knowledge."""
 
     kind = "model"
 
