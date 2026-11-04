@@ -198,3 +198,64 @@ def answers_match(question: dict, given: str) -> bool:
         accepted = [question["answer"], *question.get("alternates", [])]
         return norm_term(given) != "" and norm_term(given) in {norm_term(a) for a in accepted}
     return False
+
+
+# ---------- Phase 4: exam gate ----------
+
+def grade_quiz(questions: list[dict], answers: dict[str, str]) -> tuple[float | None, list[dict]]:
+    """Mark your answers ({question id: answer}). Returns (score 0-1, one result per question).
+    Score is None for a quiz with no questions."""
+    results = []
+    for q in questions:
+        given = (answers.get(q["id"]) or "").strip()
+        results.append({"id": q["id"], "given": given, "correct": bool(given) and answers_match(q, given)})
+    if not questions:
+        return None, results
+    return sum(r["correct"] for r in results) / len(questions), results
+
+
+def quiz_passed(score: float | None) -> bool:
+    return score is not None and score >= config.QUIZ_PASS_PCT - 1e-9
+
+
+VERDICTS = ("pass", "fail", "cant_tell")
+
+
+def apply_evidence_rule(grades: list[dict]) -> list[dict]:
+    """A "pass" must name specific visible evidence. A pass without it becomes "cant_tell"."""
+    out = []
+    for g in grades:
+        g = dict(g)
+        if g["verdict"] == "pass" and len((g.get("evidence") or "").strip()) < 3:
+            g["verdict"] = "cant_tell"
+            g["reason"] = f"No specific evidence named, so this can't count as a pass. {g.get('reason', '')}".strip()
+            g["need"] = g.get("need") or "Show this item clearly in a screenshot or in your text."
+            g["no_evidence"] = True
+        out.append(g)
+    return out
+
+
+def effective_grades(grades: list[dict], overrides: list[dict]) -> list[dict]:
+    """The grader's verdicts with your overrides applied (the newest override per item wins)."""
+    latest = {}
+    for o in overrides:  # oldest first
+        latest[o["item_id"]] = o
+    out = []
+    for g in grades:
+        o = latest.get(g["id"])
+        out.append({**g, "verdict": o["new_verdict"], "override": o} if o else dict(g))
+    return out
+
+
+def task_status(rubric: list[dict], grades: list[dict] | None) -> str:
+    """passed: every rubric item passes. failed: at least one fails.
+    need_more: no fails, but some item is "cant_tell" or wasn't graded."""
+    if not grades:
+        return "need_more"
+    by_id = {g["id"]: g["verdict"] for g in grades}
+    verdicts = [by_id.get(item["id"], "cant_tell") for item in rubric]
+    if "fail" in verdicts:
+        return "failed"
+    if all(v == "pass" for v in verdicts):
+        return "passed"
+    return "need_more"
