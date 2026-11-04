@@ -16,8 +16,10 @@ import config
 
 RATINGS = {"again": Rating.Again, "hard": Rating.Hard, "good": Rating.Good, "easy": Rating.Easy}
 
+# No minute-long learning steps: this app reviews once a day, so even "Again" means
+# "tomorrow" (Again/Hard: 1 day, Good: 2 days, Easy: 8 days for a new card).
 # Fuzzing off: the same answers always give the same due date (easier to test and to explain).
-_scheduler = Scheduler(enable_fuzzing=False)
+_scheduler = Scheduler(learning_steps=(), relearning_steps=(), enable_fuzzing=False)
 
 
 def new_card() -> tuple[str, str]:

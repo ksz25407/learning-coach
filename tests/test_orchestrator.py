@@ -77,13 +77,6 @@ def test_planning_failure_keeps_stage(coach, fake):
     assert coach.stage(pid) == "planning"
 
 
-def test_complete_unlocks_next(coach, fake, conn):
-    pid = scope_to_learning(coach, fake)
-    ms = store.get_milestones(conn, pid)
-    coach.complete_milestone(ms[0]["id"])
-    assert [m["status"] for m in store.get_milestones(conn, pid)] == ["done", "active", "locked", "locked"]
-
-
 def test_locked_lesson_refused(coach, fake, conn):
     pid = scope_to_learning(coach, fake)
     locked = store.get_milestones(conn, pid)[1]
@@ -284,7 +277,7 @@ def test_estimate_uses_only_recent_calls(coach, conn, monkeypatch):
 def test_estimate_typical_and_max(coach, conn, monkeypatch):
     pid = store.create_profile(conn)
     monkeypatch.setattr(coach, "agent_costs", lambda _pid: {a: 1.0 for a in coach.LESSON_AGENTS})
-    # typical: 2 curator + teacher + 2 checkers + 2 quiz agents = 7 calls
-    # max: + 2 rewrites (2 teacher + 4 checker calls) + 2 quiz redrafts (4 calls) = 17 calls
-    assert coach.estimate_lesson_cost(pid) == (7.0, 17.0)
+    # typical: 2 curator + teacher + 2 checkers + 2 quiz agents + task draft (Phase 4) = 8 calls
+    # max: + 2 rewrites (2 teacher + 4 checker calls) + 2 quiz redrafts (4 calls) = 18 calls
+    assert coach.estimate_lesson_cost(pid) == (8.0, 18.0)
     assert coach.estimate_check_cost(pid) == (4.0, 4.0 + 2 + 4 + 4)

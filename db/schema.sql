@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS task_images (
 CREATE TABLE IF NOT EXISTS overrides (                  -- your grade overrides, with reasons
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     milestone_id INTEGER NOT NULL REFERENCES milestones(id),
+    submission_id INTEGER NOT NULL REFERENCES task_submissions(id),  -- the graded submission it changes
     item_id      TEXT NOT NULL,                         -- rubric item id
     old_verdict  TEXT NOT NULL,
     new_verdict  TEXT NOT NULL,

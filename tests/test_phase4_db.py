@@ -126,7 +126,7 @@ def test_delete_subject_removes_phase4_rows_keeps_usage(conn):
     store.add_to_bank(conn, mid, [q])
     store.save_task(conn, mid, "file", "Do it", [{"id": "r1", "criterion": "c", "evidence": "e"}], ["shot"])
     sid = store.add_submission(conn, mid, "done", [("image/png", b"\x89PNG")], [])
-    store.add_override(conn, mid, "r1", "fail", "pass", "I checked")
+    store.add_override(conn, mid, sid, "r1", "fail", "pass", "I checked")
     card = store.add_card(conn, pid, mid, "walls", "{}", "2026-11-04T00:00:00+00:00")
     store.add_review_log(conn, card, None, False, "again", "exam", "{}")
     store.add_quiz_result(conn, mid, 0.5, False, {})

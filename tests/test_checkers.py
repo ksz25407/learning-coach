@@ -192,7 +192,8 @@ def test_run_checks_on_phase2_lesson_needs_no_curator(coach, fake, conn, mid, mo
 
     new_calls = fake.messages.calls[calls_before:]
     assert not any("tools" in c for _, c in new_calls)  # no Curator search
-    assert {agent_of(c) for _, c in new_calls} == {"fact_checker", "pedagogy", "examiner", "quiz_solver"}
+    assert {agent_of(c) for _, c in new_calls} == {"fact_checker", "pedagogy", "examiner", "quiz_solver",
+                                                   "examiner_task"}  # Phase 4: task written once
     docs = [b for b in calls_of(fake, "fact_checker")[0]["messages"][0]["content"] if b["type"] == "document"]
     assert "Cached page" in docs[0]["source"]["data"]
     assert lesson["status"] == "verified"

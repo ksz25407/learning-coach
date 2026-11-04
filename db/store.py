@@ -139,11 +139,11 @@ def delete_profile(conn, profile_id: int):
                      " (SELECT id FROM review_schedule WHERE profile_id = ?)", (profile_id,))
         conn.execute("DELETE FROM review_schedule WHERE profile_id = ?", (profile_id,))
         conn.execute(f"DELETE FROM question_bank WHERE milestone_id IN ({milestone_ids})", (profile_id,))
+        conn.execute(f"DELETE FROM overrides WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM task_images WHERE submission_id IN (SELECT id FROM task_submissions"
                      f" WHERE milestone_id IN ({milestone_ids}))", (profile_id,))
         conn.execute(f"DELETE FROM task_submissions WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM tasks WHERE milestone_id IN ({milestone_ids})", (profile_id,))
-        conn.execute(f"DELETE FROM overrides WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM study_log WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM lessons WHERE milestone_id IN ({milestone_ids})", (profile_id,))
         conn.execute(f"DELETE FROM quiz_results WHERE milestone_id IN ({milestone_ids})", (profile_id,))
@@ -565,9 +565,10 @@ def submissions(conn, milestone_id: int) -> list[dict]:
     return [{**dict(r), "grades": json.loads(r["grades_json"]) if r["grades_json"] else None} for r in rows]
 
 
-def add_override(conn, milestone_id: int, item_id: str, old: str, new: str, reason: str):
-    conn.execute("INSERT INTO overrides (milestone_id, item_id, old_verdict, new_verdict, reason, created_at)"
-                 " VALUES (?, ?, ?, ?, ?, ?)", (milestone_id, item_id, old, new, reason, utc_now_iso()))
+def add_override(conn, milestone_id: int, submission_id: int, item_id: str, old: str, new: str, reason: str):
+    conn.execute("INSERT INTO overrides (milestone_id, submission_id, item_id, old_verdict, new_verdict, reason,"
+                 " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                 (milestone_id, submission_id, item_id, old, new, reason, utc_now_iso()))
     conn.commit()
 
 
