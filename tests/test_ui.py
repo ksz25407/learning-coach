@@ -108,6 +108,8 @@ def test_flagged_lesson_shows_problems_and_quiz(tmp_path, monkeypatch):
     assert any("after 2 rewrite(s)" in e.value and "Walls are 3 m thick" in e.value for e in at.error)
     assert not any(b.label.startswith("Run checks") for b in at.button)  # already checked
     page = " ".join(m.value for m in at.markdown)
-    assert "Which tool draws walls?" in page
+    # Phase 4: a quiz from before the exam existed must be prepared first (concept tags + task).
+    assert "Which tool draws walls?" not in page
+    assert any(b.label.startswith("Prepare exam (~$") for b in at.button)
     assert "Odd one?" in page and "Solver: Floor" in page
     assert any("Only 1 question(s) survived" in w.value for w in at.warning)

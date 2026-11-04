@@ -4,9 +4,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so imports work from ui/
 
+import re
+
 import anthropic
 import streamlit as st
 
+import clock
 import config
 from agents.curator import is_long
 from agents.scoper import SubjectProfile
@@ -76,31 +79,269 @@ def show_review_details(review):
                         f"{len(r['flags']) - len(majors)} minor flag(s)")
 
 
-def show_quiz(quiz, review):
-    if review.get("quiz_error"):
-        st.warning(f"No quiz: {review['quiz_error']}", icon=":material/quiz:")
-    if quiz is None:
-        return
-    st.markdown("#### Quick quiz")
-    if quiz["flagged"]:
-        st.warning(f"Only {len(quiz['questions'])} question(s) survived the Quiz solver's check.",
-                   icon=":material/flag:")
-    for i, q in enumerate(quiz["questions"], 1):
-        st.markdown(f"**{i}. {q['question']}**")
-        if q["kind"] == "multiple_choice":
-            st.markdown("  \n".join(f"{chr(65 + j)}. {c}" for j, c in enumerate(q["choices"])))
-        elif q["kind"] == "numeric" and q.get("unit"):
-            st.caption(f"Answer in {q['unit']}")
-    if quiz["questions"]:
-        with st.expander("Show answers"):
-            for i, q in enumerate(quiz["questions"], 1):
-                unit = f" {q['unit']}" if q.get("unit") else ""
-                st.markdown(f"**{i}.** {q['answer']}{unit}: {q['explanation']}")
-    if quiz["dropped"]:
+# ---------------- Phase 4 helpers ----------------
+
+def local_time(iso: str | None) -> str:
+    """A stored UTC time shown in your time zone (config.TIMEZONE)."""
+    if not iso:
+        return ""
+    return clock.from_iso(iso).astimezone(clock.local_tz()).strftime("%b %d, %Y %H:%M")
+
+
+def anchor(heading: str) -> str:
+    """The anchor Streamlit gives a Markdown heading: lower case, words joined by '-'."""
+    s = re.sub(r"[^\w\s-]", "", heading.lower()).strip()
+    return re.sub(r"[\s_]+", "-", s)
+
+
+def section_link(section: str) -> str:
+    return f"[{section}](#{anchor(section)})" if section else "the lesson"
+
+
+def key_text(q: dict) -> str:
+    """The correct answer as you'd read it."""
+    if q["kind"] == "multiple_choice" and q.get("choices"):
+        i = ord(q["answer"].strip().upper()[:1] or "A") - 65
+        return f"{q['answer']}. {q['choices'][i]}" if 0 <= i < len(q["choices"]) else q["answer"]
+    return f"{q['answer']} {q.get('unit') or ''}".strip()
+
+
+def answer_widget(q: dict, key: str, label: str) -> str:
+    """An input that matches the question kind. Returns your answer as text."""
+    if q["kind"] == "multiple_choice":
+        letters = [chr(65 + j) for j in range(len(q["choices"]))]
+        pick = st.radio(label, letters, index=None, key=key,
+                        format_func=lambda x: f"{x}. {q['choices'][ord(x) - 65]}")
+        return pick or ""
+    if q["kind"] == "numeric":
+        unit = q.get("unit") or ""
+        return st.text_input(label, key=key, placeholder=f"e.g. 2200 {unit}".strip(),
+                             help=f"A number{', in ' + unit if unit else ''}. Prefixes like k or m are fine.")
+    return st.text_input(label, key=key)
+
+
+def show_missed(missed: list[dict]):
+    for x in missed:
+        unit = f" {x['unit']}" if x.get("unit") else ""
+        right = x["answer"]
+        if x.get("choices"):
+            i = ord(x["answer"].strip().upper()[:1] or "A") - 65
+            right = f"{x['answer']}. {x['choices'][i]}" if 0 <= i < len(x["choices"]) else x["answer"]
+        st.markdown(f"- **{x['question']}**  \n  Your answer: {x['given'] or '(blank)'} · "
+                    f"Correct: **{right}{unit}**  \n  {x['explanation']}  \n  Read again: {section_link(x['section'])}")
+
+
+VERDICT_ICON = {"pass": ":material/check_circle:", "fail": ":material/cancel:", "cant_tell": ":material/help:"}
+VERDICT_TEXT = {"pass": ":green[Pass]", "fail": ":red[Fail]", "cant_tell": ":orange[Can't tell]"}
+TASK_TEXT = {"passed": "Task passed", "failed": "Task: some items failed", "need_more": "Task: send more evidence",
+             "not_submitted": "Task not submitted", "missing": "No task yet"}
+
+
+def show_dropped(quiz):
+    if quiz and quiz["dropped"]:
         with st.expander(f"Dropped questions ({len(quiz['dropped'])})"):
             for q in quiz["dropped"]:
                 st.markdown(f"- {q['question']}  \n  Key: {q['answer']} · Solver: {q['solver_answer']} "
                             f"· {q['reason']}. {q['solver_note']}")
+
+
+def show_history(mid):
+    hist = coach.attempt_history(mid)
+    if not hist:
+        return
+    with st.expander(f"Attempt history ({len(hist)})", icon=":material/history:"):
+        for h in hist:
+            when = local_time(h["at"])
+            if h["kind"] == "quiz":
+                result = "passed" if h["passed"] else "failed"
+                st.markdown(f"**{when} · Quiz {h['score']:.0%} ({result})**")
+                if h["missed"]:
+                    st.caption("Missed: " + "; ".join(x["question"] for x in h["missed"]))
+            elif h["error"]:
+                st.markdown(f"**{when} · Task: grading failed** ({h['error']})")
+            else:
+                counts = {v: sum(g["verdict"] == v for g in h["grades"]) for v in VERDICT_TEXT}
+                st.markdown(f"**{when} · Task** ({h['n_images']} screenshot(s)): {counts['pass']} pass, "
+                            f"{counts['fail']} fail, {counts['cant_tell']} can't tell")
+
+
+def show_exam(mid, review):
+    """The Examiner gate under the lesson: quiz + practical task."""
+    st.subheader("Exam", anchor="exam")
+    for err in ("quiz_error", "task_error"):
+        if review.get(err):
+            st.warning(f"{'Quiz' if err == 'quiz_error' else 'Task'} couldn't be made: {review[err]}",
+                       icon=":material/warning:")
+    gs = coach.gate_state(mid)
+    m = gs["milestone"]
+
+    if gs["passed"]:
+        how = {"exam": "by exam", "manual_reason": "with a written reason",
+               "manual_pre_phase4": "manually (before Phase 4)"}[m["pass_method"] or "manual_pre_phase4"]
+        when = f" on {local_time(m['passed_at'])}" if m["passed_at"] else ""
+        st.success(f"You passed this milestone {how}{when}." +
+                   (f"  \nReason: {m['pass_reason']}" if m["pass_reason"] else ""), icon=":material/verified:")
+        show_history(mid)
+        show_dropped(gs["quiz"])
+        return
+    if gs["disabled"]:
+        st.info(gs["disabled"], icon=":material/lock:")
+        show_dropped(gs["quiz"])
+        return
+    if gs["quiz_flagged"]:
+        st.warning(f"Only {len(gs['questions'])} question(s) survived the Quiz solver's check.",
+                   icon=":material/flag:")
+    if gs["needs_prepare"]:
+        st.info("This lesson was made before the exam existed. Prepare it first: the Examiner tags the quiz "
+                "questions with concepts and writes the practical task.", icon=":material/build:")
+        cost = coach.estimate_prepare_cost(m["profile_id"])
+        if st.button(f"Prepare exam (~${cost:.2f})", key=f"prep{mid}", icon=":material/build:"):
+            with st.spinner("Examiner is preparing the exam..."):
+                run_safely(coach.prepare_exam, mid)
+            st.rerun()
+        show_dropped(gs["quiz"])
+        return
+
+    # ---- part 1: quiz ----
+    with st.container(border=True):
+        st.markdown(f"**1. Quiz** (pass mark {config.QUIZ_PASS_PCT:.0%}, graded instantly, free)")
+        attempts = gs["attempts"]
+        last = attempts[-1] if attempts else None
+        if gs["quiz_status"] == "passed":
+            best = max(a["score"] for a in attempts if a["passed"])
+            st.success(f"Quiz passed ({best:.0%}).", icon=":material/check_circle:")
+            if last and last["passed"] and last["details"].get("missed"):
+                with st.expander("Questions you missed (they're in your review now)"):
+                    show_missed(last["details"]["missed"])
+        elif gs["quiz_status"] == "missing":
+            st.warning("No verified quiz questions survived for this milestone, so the exam is the "
+                       "practical task alone.", icon=":material/warning:")
+        elif gs["quiz_status"] == "needs_new":
+            st.error(f"Last try: {last['score']:.0%}. You need {config.QUIZ_PASS_PCT:.0%}. "
+                     "These concepts are now in your spaced review.", icon=":material/cancel:")
+            show_missed(last["details"].get("missed", []))
+            typical, worst = coach.estimate_new_quiz_cost(m["profile_id"])
+            if st.button(f"Get a new quiz (~${typical:.2f}, max ${worst:.2f})", key=f"newquiz{mid}",
+                         icon=":material/refresh:", type="primary"):
+                with st.spinner("Examiner is writing new questions, Quiz solver is checking them..."):
+                    run_safely(coach.new_quiz, mid)
+                st.rerun()
+        else:
+            with st.form(f"quiz{mid}-{len(attempts)}"):
+                given = {}
+                for i, q in enumerate(gs["questions"], 1):
+                    st.markdown(f"**{i}. {q['question']}**")
+                    given[q["id"]] = answer_widget(q, f"qa{mid}-{len(attempts)}-{q['id']}", "Your answer")
+                if st.form_submit_button("Submit answers", type="primary"):
+                    run_safely(coach.submit_quiz, mid, given)
+                    st.rerun()
+
+    # ---- part 2: practical task ----
+    task = gs["task"]
+    with st.container(border=True):
+        st.markdown(f"**2. Practical task** ({TASK_TEXT[gs['task_status']]})")
+        if task is None:
+            st.warning("There is no task yet.", icon=":material/warning:")
+            return
+        st.markdown(task["instructions"])
+        st.markdown("**Rubric** (every item must pass)  \n" +
+                    "  \n".join(f"{r['id']}. {r['criterion']} · _needs: {r['evidence']}_" for r in task["rubric"]))
+        if task["screenshots"]:
+            st.markdown("**Screenshots to take**  \n" + "  \n".join(f"- {s}" for s in task["screenshots"]))
+
+        grades = gs["grades"]
+        if grades:
+            st.markdown(f"**Grades for your last submission** ({local_time(gs['last_submission']['created_at'])})")
+            for g in grades:
+                crit = next((r["criterion"] for r in task["rubric"] if r["id"] == g["id"]), g["id"])
+                with st.container(horizontal=True, vertical_alignment="center"):
+                    st.markdown(f"{VERDICT_ICON[g['verdict']]} **{g['id']}. {crit}**: {VERDICT_TEXT[g['verdict']]}"
+                                f"  \n{g['reason']}" + (f"  \n_Evidence: {g['evidence']}_" if g.get("evidence") else "")
+                                + (f"  \n:orange[Send: {g['need']}]" if g["verdict"] == "cant_tell" and g.get("need") else "")
+                                + (f"  \n:blue[Overridden by you: {g['override']['reason']}]" if g.get("override") else ""))
+                    if g["verdict"] != "pass" and gs["task_status"] != "passed":
+                        with st.popover("Override", icon=":material/edit:"):
+                            reason = st.text_input("Why does this item pass?", key=f"ovr{mid}-{g['id']}")
+                            if st.button("Mark as pass", key=f"ovb{mid}-{g['id']}"):
+                                run_safely(coach.override_item, mid, g["id"], reason)
+                                st.rerun()
+        elif gs["last_submission"] is None and gs["submissions"] and gs["submissions"][-1]["error"]:
+            st.warning(f"Grading failed: {gs['submissions'][-1]['error']}", icon=":material/warning:")
+
+        if gs["task_status"] != "passed":
+            cost = coach.estimate_grading_cost(m["profile_id"])
+            with st.form(f"task{mid}", clear_on_submit=True):
+                text = st.text_area("Your answer / notes" if task["screenshots"] else "Your answer",
+                                    height=200 if task["proof_type"] != "file" else 100)
+                files = st.file_uploader(f"Screenshots (up to {config.IMAGE_MAX_COUNT})", type=["png", "jpg", "jpeg"],
+                                         accept_multiple_files=True)
+                if st.form_submit_button(f"Submit for grading (~${cost:.2f})", type="primary"):
+                    with st.spinner("Grader is checking each rubric item..."):
+                        run_safely(coach.submit_task, mid, text, [f.getvalue() for f in files or []])
+                    st.rerun()
+
+    if gs["manual_pass_allowed"]:
+        with st.expander("The task can't be graded? Pass with a written reason", icon=":material/gavel:"):
+            st.caption("Last resort. Your reason is logged and shown on the milestone.")
+            reason = st.text_area("Reason", key=f"mpr{mid}")
+            if st.button("Pass this milestone", key=f"mpb{mid}"):
+                run_safely(coach.manual_pass, mid, reason)
+                st.rerun()
+    show_history(mid)
+    show_dropped(gs["quiz"])
+
+
+def show_due_reviews(pid):
+    """'Due today' at the top of the learning page: one card at a time."""
+    due = coach.due_reviews(pid)
+    stats = coach.review_stats(pid)
+    if not stats["total_cards"]:
+        return
+    result = st.session_state.get("review_result")
+    with st.container(border=True):
+        st.markdown(f"**Due today: {len(due)}** · reviewed today {stats['reviewed_today']} "
+                    f"(limit {stats['daily_limit']})")
+        if result:
+            q = result["question"]
+            if result["correct"]:
+                st.success(f"Right: {key_text(q)}", icon=":material/check_circle:")
+                st.caption("Rated Good. Was it hard or easy to remember? (You can change it today only.)")
+                with st.container(horizontal=True):
+                    for r in ("hard", "good", "easy"):
+                        kind = "primary" if result.get("rating", "good") == r else "secondary"
+                        if st.button(r.capitalize(), key=f"adj{r}", type=kind):
+                            run_safely(coach.adjust_review, result["log_id"], r)
+                            if "error" not in st.session_state:  # run_safely stores errors there
+                                result["rating"] = r
+                            st.rerun()
+            else:
+                st.error(f"Not quite. Correct: {key_text(q)}", icon=":material/cancel:")
+                st.markdown(f"{q['explanation']}  \nThis comes back tomorrow.")
+            if st.button("Next", key="review_next", icon=":material/arrow_forward:"):
+                st.session_state.pop("review_result")
+                st.rerun()
+        elif due:
+            item = due[0]
+            q, card = item["question"], item["card"]
+            mtitle = store.get_milestone(conn, card["milestone_id"])["title"]
+            st.caption(f"{mtitle} · {card['concept']}")
+            with st.form(f"review{card['id']}-{q['bank_id']}"):
+                st.markdown(f"**{q['question']}**")
+                given = answer_widget(q, f"ra{card['id']}-{q['bank_id']}", "Your answer")
+                if st.form_submit_button("Check", type="primary"):
+                    res = run_safely(coach.answer_review, card["id"], q["bank_id"], given)
+                    if res:
+                        st.session_state.review_result = res
+                    st.rerun()
+        else:
+            st.caption("Nothing left for today.")
+        with st.expander("Review stats", icon=":material/insights:"):
+            recall = f"{stats['recall_30d']:.0%} of {stats['reviews_30d']}" if stats["recall_30d"] is not None else "no reviews yet"
+            st.markdown(f"Cards: **{stats['total_cards']}** · due now: **{stats['due_now']}** · "
+                        f"recalled in the last 30 days: **{recall}**")
+            if stats["weakest"]:
+                st.markdown("Weakest concepts:  \n" + "  \n".join(
+                    f"- {w['concept']}: {w['misses']} miss(es), {w['right_share']:.0%} right" for w in stats["weakest"]))
 
 
 # ---------------- sidebar ----------------
@@ -207,7 +448,8 @@ elif stage == "confirm_profile":
         goal = st.text_area("Goal", p["goal"])
         level = st.text_input("Current level", p["level"])
         hours = st.number_input("Hours per week", min_value=0.5, value=float(p["hours_per_week"]), step=0.5)
-        deadline = st.text_input("Deadline", p["deadline"])
+        deadline = st.text_input("Deadline (as you described it)", p["deadline"])
+        deadline_date = st.date_input("Deadline date (for the on-track check)", value=None)
         practice = st.selectbox("Practice type", practice_opts, index=practice_opts.index(p["practice_type"]))
         proof = st.selectbox("Proof of skill", proof_opts, index=proof_opts.index(p["proof_of_skill"]))
         notes = st.text_area("Notes (units, tools, versions)", p["notes"])
@@ -216,6 +458,7 @@ elif stage == "confirm_profile":
                 subject=subject, goal=goal, level=level, hours_per_week=hours, deadline=deadline,
                 practice_type=practice, proof_of_skill=proof, notes=notes,
             ).model_dump())
+            coach.set_deadline(pid, deadline_date)
             with st.spinner("Planner is writing your milestones..."):
                 run_safely(coach.make_plan, pid)
             st.rerun()
@@ -234,26 +477,81 @@ elif stage == "planning":
 # --- learning: milestones + lesson + chat ---
 elif stage == "learning":
     milestones = store.get_milestones(conn, pid)
-    done = sum(1 for m in milestones if m["status"] == "done")
+
+    # ---- overview: passed, hours (plan estimates), on track vs deadline ----
+    ov = coach.subject_overview(pid)
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        st.metric("Milestones passed", f"{ov['passed']}/{ov['total']}", border=True)
+        st.metric("Hours done (plan estimate)", f"{ov['hours_done']:g} / {ov['hours_total']:g} h", border=True)
+        st.metric("Projected finish", ov["projected_finish"].strftime("%b %d, %Y") if ov["projected_finish"]
+                  else "—", border=True, help=f"Remaining estimated hours at {ov['hours_per_week']:g} h/week.")
+        with st.popover("Deadline", icon=":material/event:"):
+            new_deadline = st.date_input("Deadline date", value=ov["deadline"], key="deadline_pick")
+            if st.button("Save deadline", key="deadline_save"):
+                coach.set_deadline(pid, new_deadline)
+                st.rerun()
+    if ov["deadline"] is None:
+        st.caption("Set a deadline date to see if you're on track.")
+    elif ov["on_track"]:
+        st.success(f"On track for your deadline ({ov['deadline']:%b %d, %Y}).", icon=":material/trending_up:")
+    elif ov["on_track"] is False:
+        st.warning(f"Behind: at {ov['hours_per_week']:g} h/week you'd finish {ov['projected_finish']:%b %d, %Y}, "
+                   f"after your deadline ({ov['deadline']:%b %d, %Y}).", icon=":material/trending_down:")
+
+    show_due_reviews(pid)
+
     left, right = st.columns([1, 1])
 
     with left:
-        st.subheader(f"Milestones ({done}/{len(milestones)})")
-        st.progress(done / len(milestones) if milestones else 0.0)
+        st.subheader(f"Milestones ({ov['passed']}/{len(milestones)})")
+        st.progress(ov["passed"] / len(milestones) if milestones else 0.0)
+        in_review = {c["milestone_id"] for c in store.cards(conn, pid)}
         for m in milestones:
-            icon = {"done": "✅", "active": "▶️", "locked": "🔒"}[m["status"]]
+            icon = {"done": ":material/check_circle:", "active": ":material/play_circle:",
+                    "locked": ":material/lock:"}[m["status"]]
+            prog = coach.milestone_progress(m["id"])
             with st.container(border=True):
-                st.markdown(f"{icon} **{m['position']}. {m['title']}**  \n{m['objective']}  \n"
-                            f"_~{m['est_hours']:g} h_")
+                st.markdown(f"{icon} **{m['position']}. {m['title']}**  \n{m['objective']}")
+                logged = prog["study_minutes"] / 60
+                hours = f"~{m['est_hours']:g} h planned" + (f" · {logged:.1f} h logged" if logged else "")
+                badges = []
+                if m["pass_method"] == "exam":
+                    badges.append(f":green-badge[Passed by exam {local_time(m['passed_at'])}]")
+                elif m["pass_method"] == "manual_reason":
+                    badges.append(f":orange-badge[Passed with a reason {local_time(m['passed_at'])}]")
+                elif m["pass_method"] == "manual_pre_phase4":
+                    badges.append(":gray-badge[Passed manually (before Phase 4)]")
+                if prog["overrides"]:
+                    badges.append(f":blue-badge[{len(prog['overrides'])} override(s)]")
+                details = []
+                if prog["quiz_attempts"]:
+                    details.append(f"quiz tries: {prog['quiz_attempts']}, best {prog['best_score']:.0%}")
+                if prog["task_submissions"]:
+                    details.append(f"{TASK_TEXT[prog['task_status']].lower()} ({prog['task_submissions']} submission(s))")
+                st.markdown(" ".join(badges) + ("  \n" if badges else "") + f"_{hours}_" +
+                            (f"  \n{' · '.join(details)}" if details else ""))
+                if m["pass_reason"]:
+                    st.caption(f"Reason: {m['pass_reason']}")
+                for o in prog["overrides"]:
+                    st.caption(f"Override {o['item_id']} ({o['old_verdict']} → {o['new_verdict']}): {o['reason']}")
                 if m["status"] != "locked":
-                    c1, c2 = st.columns(2)
-                    if c1.button("Open lesson", key=f"open{m['id']}"):
-                        st.session_state.open_milestone = m["id"]
-                    ticked = c2.checkbox("Mark done", value=m["status"] == "done",
-                                         disabled=m["status"] == "done", key=f"done{m['id']}")
-                    if ticked and m["status"] == "active":
-                        coach.complete_milestone(m["id"])
-                        st.rerun()
+                    with st.container(horizontal=True, vertical_alignment="center"):
+                        if st.button("Open lesson", key=f"open{m['id']}"):
+                            st.session_state.open_milestone = m["id"]
+                        with st.popover("Log time", icon=":material/timer:"):
+                            mins = st.number_input("Minutes studied", min_value=5, value=30, step=5,
+                                                   key=f"mins{m['id']}")
+                            if st.button("Log", key=f"log{m['id']}"):
+                                run_safely(coach.log_study, m["id"], mins)
+                                st.rerun()
+                        if m["pass_method"] == "manual_pre_phase4" and m["id"] not in in_review:
+                            if st.button("Add to review", key=f"addrev{m['id']}", icon=":material/repeat:",
+                                         help="Tag this milestone's quiz questions and add them to spaced review "
+                                              "(no exam needed; one small Examiner call)."):
+                                n = run_safely(coach.add_to_review, m["id"])
+                                if n is not None:
+                                    st.toast(f"Added {n} concept(s) to your review.")
+                                st.rerun()
 
     with right:
         st.subheader("Chat with your Coach")
@@ -310,7 +608,7 @@ elif stage == "learning":
         show_status(lesson, review)
         st.markdown(lesson["content"])
         show_review_details(review)
-        show_quiz(store.get_quiz(conn, mid), review)
+        show_exam(mid, review)
 
         notes = store.lesson_notes(lesson)
         if notes is not None:
