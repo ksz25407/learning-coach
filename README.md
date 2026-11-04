@@ -4,6 +4,7 @@ A personal, local app that teaches any subject with a milestone plan.
 Phase 1: Scoper → Planner → Teacher, a simple Coach, Streamlit UI, SQLite and cost logging.
 Phase 2: Curator with web search, PDF uploads, and a Teacher that cites its sources.
 Phase 3: Fact-checker, Pedagogy reviewer, a minimal Examiner and a blind Quiz solver.
+Phase 4: Examiner gate (quiz + practical task), progress tracking and spaced review (py-fsrs).
 
 ## Setup (Windows, PowerShell)
 
@@ -55,7 +56,7 @@ It won't start if this month's eval spend plus the run's worst case would pass
 4. **Open lesson** → the Curator searches the web for 1–2 resources, the app downloads them,
    picks the best-matching pages of your PDFs, and the Teacher writes a cited lesson.
    Then the checkers run (Phase 3, below).
-5. Tick **Mark done** to unlock the next milestone.
+5. Pass the **Exam** under the lesson to unlock the next milestone (Phase 4, below).
 
 ## Sources (Phase 2)
 
@@ -78,7 +79,7 @@ It won't start if this month's eval spend plus the run's worst case would pass
 - **Cost**: web search is $10 per 1,000 searches (max 5 per lesson), counted in the monthly
   spend. All limits are in `config.py`.
 - When the database needs new columns, a backup copy is saved first as
-  `db/coach.backup-<date-time>.sqlite`.
+  `db/coach.backup-<date-time>.sqlite`. Only the newest 5 backups are kept (`MAX_BACKUPS`).
 
 ## Checkers (Phase 3)
 
@@ -95,9 +96,39 @@ It won't start if this month's eval spend plus the run's worst case would pass
   term). The Quiz solver (Sonnet) answers them from the lesson without seeing the key. Python
   compares (units converted: 2.2 kΩ = 2200 Ω). Questions it answers differently are dropped and
   listed under *Dropped questions*. Fewer than 3 left → the Examiner writes replacements (max 2
-  times). Grading your own answers comes in Phase 4.
+  times). You answer the quiz in the Exam (Phase 4).
 - The cost on **Regenerate** and **Run checks** shows the typical case (passes first time) and the
   maximum (2 rewrites + 2 quiz redrafts).
+
+## Exam gate, progress and review (Phase 4)
+
+- **Exam** (under each lesson). Both parts must pass:
+  1. **Quiz**: at least 80% right (`QUIZ_PASS_PCT`). Graded by Python, free. Answers are shown
+     only after you submit. For each miss you see the correct answer, why, and a link to the
+     lesson section. A failed quiz needs **Get a new quiz** (fresh questions, checked by the
+     Quiz solver again, a few cents). If no question survived the solver, the exam is the task alone.
+  2. **Practical task**, matching your *proof of skill*: screenshots of your work (file),
+     a solved problem with working, or an explanation in your own words. The rubric and the
+     screenshots to take are shown up front. The **Grader** (Sonnet) gives each rubric item
+     *pass / fail / can't tell* with a one-line reason. A *pass* must name the specific evidence
+     it saw; otherwise it becomes *can't tell*, which asks you for another screenshot instead of
+     failing. You can **override** a grade with a reason (logged and shown on the milestone).
+  - A part you passed stays passed. The task stays the same between tries.
+  - Last resort: after 2 submissions that couldn't be graded (`MANUAL_PASS_AFTER`), you can
+    pass with a written reason.
+  - The exam is disabled while the lesson is *Unchecked*. Lessons from before Phase 4 show
+    **Prepare exam** (tags the quiz questions with concepts and writes the task).
+- **Spaced review** (*Due today* at the top): one card per concept of a milestone. Concepts you
+  miss in an exam go in right away; on a pass, all its concepts go in. Each review shows the
+  question for that concept you saw least recently. Wrong = Again (back tomorrow), right = Good;
+  after a right answer you can switch to Hard or Easy (only that day, only the latest review).
+  At most 15 cards per day per subject (`REVIEW_DAILY_LIMIT`). Milestones ticked *done* before
+  Phase 4 have an **Add to review** button.
+- **Progress**: milestones passed, hours done (from the plan's estimates), projected finish at
+  your hours/week, and on track or behind your **Deadline** date. Each milestone shows how it
+  was passed, quiz tries and best score, task result, overrides, and time you logged with
+  **Log time** (shown only; not used for the on-track check). *Attempt history* lists every try.
+- Times are stored in UTC. "Today" uses your time zone (`TIMEZONE`, default America/New_York).
 
 ## Settings
 
