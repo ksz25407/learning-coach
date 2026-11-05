@@ -164,9 +164,13 @@ def show_key_status(task: dict, passed: bool):
                          f"({'match' if c['match'] else 'differs'})" for c in a.get("comparison", [])]
                 lines += a["problems"]
                 st.markdown(f"**Draft {a['attempt'] + 1}:**  \n" + ("  \n".join(lines) or "no problems"))
-            if task["key_check"]["attempts"] and task["key_check"]["attempts"][-1].get("solver_working"):
-                st.caption("Solver's working (last draft):")
-                st.markdown(task["key_check"]["attempts"][-1]["solver_working"])
+            last = task["key_check"]["attempts"][-1] if task["key_check"]["attempts"] else {}
+            if last.get("examiner_working"):
+                st.caption("Worked solution (Examiner, last draft):")
+                st.markdown(last["examiner_working"])
+            if last.get("solver_working"):
+                st.caption("Blind solver's working (last draft):")
+                st.markdown(last["solver_working"])
 
 
 def show_dropped(quiz):

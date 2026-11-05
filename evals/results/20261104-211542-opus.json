@@ -1,0 +1,234 @@
+{
+  "timestamp": "20261104-211542",
+  "set": "tuning",
+  "model_requested": "claude-opus-5-5",
+  "models_answered": "claude-opus-5-5",
+  "effort": "high",
+  "cost_usd": 0.1531,
+  "totals": {
+    "lessons": 12,
+    "failed_calls": 0,
+    "planted": 17,
+    "caught": 17,
+    "missed": 0,
+    "false_alarms": 0,
+    "false_alarms_on_clean_lessons": 0
+  },
+  "lessons": [
+    {
+      "id": "circuits_diode_clamper",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "the output goes from −0.7 V to 10.7 V",
+          "correct": "the output goes from −0.7 V to 9.3 V",
+          "kind": "wrong_value",
+          "why": "2Vp − 0.7 = 2 × 5 − 0.7 = 9.3 V; the course notes give the same example."
+        },
+        {
+          "quote": "The RC time constant should be much shorter than the period of the input",
+          "correct": "The RC time constant must be much longer than the period (at least 10 times)",
+          "kind": "subtle_claim",
+          "why": "The capacitor must hold its charge between cycles, so RC must be much LONGER than the period (source)."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "circuits_kirchhoff_nodal",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "**Kirchhoff's Voltage Law (KVL):** the currents entering a node add up to the currents leaving it.",
+          "correct": "Kirchhoff's Current Law (KCL): the currents entering a node add up to the currents leaving it.",
+          "kind": "wrong_name",
+          "why": "The node-current law is KCL, not KVL (source)."
+        },
+        {
+          "quote": "Write a KCL equation at each non-reference node, writing each current with Ohm's law",
+          "correct": "Choose the reference node and label node voltages FIRST; writing the KCL equations is step 3.",
+          "kind": "step_order",
+          "why": "The source order is: reference node, label voltages, write KCL, solve. You can't write the equations before labelling.",
+          "also_matches": [
+            "2. Choose a reference node (ground): usually the node with the most connections.",
+            "3. Label the voltage of every other node (V1, V2, …) relative to ground."
+          ]
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "circuits_mosfet_regions",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "Saturation needs $V_{DS} < V_{GS} - V_t$",
+          "correct": "Saturation needs $V_{DS} \\ge V_{GS} - V_t$",
+          "kind": "subtle_claim",
+          "why": "Saturation is V_DS >= V_GS - V_t; V_DS < V_GS - V_t is the triode condition (source)."
+        },
+        {
+          "quote": "$I_D$ = ½ × 2 × 1² = 2 mA",
+          "correct": "$I_D$ = ½ × 2 × 1² = 1 mA",
+          "kind": "wrong_value",
+          "why": "0.5 × 2 mA/V² × (1 V)² = 1 mA; the course notes give the same example."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "circuits_ohm_power",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "P = 2² × 10 = 20 W",
+          "correct": "P = 2² × 10 = 40 W",
+          "kind": "wrong_value",
+          "why": "2² × 10 = 40; the source example gives 40 W."
+        },
+        {
+          "quote": "Doubling the voltage across a fixed resistor doubles the power it dissipates.",
+          "correct": "Doubling the voltage across a fixed resistor quadruples the power (P = V²/R).",
+          "kind": "subtle_claim",
+          "why": "Planted in a [Source: model] section: tests the own-knowledge check. P = V²/R, so 2V gives 4P."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "circuits_rc_time_constant",
+      "planted": 0,
+      "caught": [],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "circuits_series_parallel",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "= 75 Ω",
+          "correct": "= 80 Ω",
+          "kind": "wrong_value",
+          "why": "100 × 400 / 500 = 80 Ω (also in the source)."
+        },
+        {
+          "quote": "always lies between the smallest and the largest resistor",
+          "correct": "is always smaller than the smallest resistor",
+          "kind": "subtle_claim",
+          "why": "The source says a parallel Req is always smaller than the smallest resistor."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "circuits_voltage_divider",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "Vout = 12 × 5 / 15 = 6 V",
+          "correct": "Vout = 12 × 5 / 15 = 4 V",
+          "kind": "wrong_value",
+          "why": "12 × 5 / 15 = 4 V, as in the source."
+        },
+        {
+          "quote": "Connecting it raises Vout slightly",
+          "correct": "Connecting it lowers Vout",
+          "kind": "subtle_claim",
+          "why": "RL in parallel with R2 lowers the bottom resistance, so Vout drops (source)."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "revit_doors_windows",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "You can also place doors in empty space first and attach them to a wall later",
+          "correct": "Doors can only be placed in a wall (they are hosted elements).",
+          "kind": "subtle_claim",
+          "why": "The source says doors are hosted and can only be placed in a wall."
+        },
+        {
+          "quote": "(shortcut WD)",
+          "correct": "(shortcut WN)",
+          "kind": "wrong_name",
+          "why": "The source gives WN as the Window shortcut."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "revit_floors",
+      "planted": 1,
+      "caught": [
+        {
+          "quote": "Click **Finish Edit Mode** (the green check mark) to enter sketch mode.",
+          "correct": "Choosing the Floor tool enters sketch mode; Finish Edit Mode is the LAST step, after the boundary is sketched.",
+          "kind": "step_order",
+          "why": "The source's order is: Floor tool (enters sketch mode), type, sketch boundary, then Finish Edit Mode.",
+          "also_matches": [
+            "4. Pick the floor type in the Type Selector.",
+            "5. On the Draw panel, use **Pick Walls** and click each exterior wall."
+          ]
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "revit_levels_grids",
+      "planted": 0,
+      "caught": [],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "revit_rooms",
+      "planted": 0,
+      "caught": [],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    },
+    {
+      "id": "revit_walls",
+      "planted": 2,
+      "caught": [
+        {
+          "quote": "(shortcut WL)",
+          "correct": "(shortcut WA)",
+          "kind": "wrong_name",
+          "why": "The source gives WA as the keyboard shortcut for Wall: Architectural."
+        },
+        {
+          "quote": "Draw the outside walls counter-clockwise, so the exterior face ends up on the outside.",
+          "correct": "Draw the outside walls clockwise, so the exterior face ends up on the outside.",
+          "kind": "subtle_claim",
+          "why": "Revit puts the exterior face on the left of the drawing direction, so only a clockwise loop puts it outside."
+        }
+      ],
+      "missed": [],
+      "false_alarms": [],
+      "minor_flags": []
+    }
+  ]
+}

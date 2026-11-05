@@ -27,7 +27,7 @@ def restore_config():
 
 def test_tuning_set_shape():
     fixtures = ev.load_fixtures()
-    assert len(fixtures) == 10
+    assert len(fixtures) == 12  # Phase 5: + diode clamper, MOSFET regions (netlists, LaTeX)
     assert sum(1 for fx in fixtures if not fx["planted_errors"]) == 3
     kinds = {e["kind"] for fx in fixtures for e in fx["planted_errors"]}
     assert kinds == set(ev.ERROR_KINDS)  # all four kinds of planted error
@@ -93,7 +93,7 @@ def test_partial_quote_counts_as_caught():
 def test_cost_cap_stops_before_any_check(conn, fake, capsys):
     # The fake count_tokens says 999,999 input tokens -> far above the $3 cap.
     assert ev.main(["--model", "opus"], conn=conn, client=fake) == 1
-    assert [kind for kind, _ in fake.messages.calls] == ["count_tokens"] * 10  # no parse() call
+    assert [kind for kind, _ in fake.messages.calls] == ["count_tokens"] * len(ev.load_fixtures())  # no parse() call
     assert "Stopped before calling the API" in capsys.readouterr().out
 
 

@@ -109,6 +109,10 @@ The task must match the learner's proof_of_skill:
 - "explain_back": ask the learner to explain the topic in their own words to a beginner (or
   to a specific audience), covering named points. `screenshots` = [].
 
+worked_solution: for "solved_problem", solve your own problem fully, step by step, BEFORE you
+write the rubric; the rubric's values must be exactly the final results of this solution. It
+is never shown to the learner before they pass. "" for other proof types.
+
 Rubric rules (3-6 items, doable in the milestone's estimated time):
 - For "file" and "explain_back", every item has kind "check": ONE checkable thing phrased as
   a pass condition ("The exported file uses the requested template"), never vague ("good
@@ -143,7 +147,10 @@ class RubricItem(BaseModel):
 
 
 class Task(BaseModel):
+    # Field order matters: the reply is written in this order, so a solved problem is worked
+    # out in worked_solution BEFORE its values go into the rubric.
     instructions: str
+    worked_solution: str
     rubric: list[RubricItem]
     screenshots: list[str]
 
@@ -170,7 +177,7 @@ def draft_task(llm, profile: dict, milestone: dict, lesson_text: str, profile_id
                                profile=profile, profile_id=profile_id)
     rubric = [finish_item(f"r{i}", item.model_dump()) for i, item in enumerate(task.rubric, 1)]
     return {"proof_type": proof, "instructions": task.instructions, "rubric": rubric,
-            "screenshots": task.screenshots}
+            "screenshots": task.screenshots, "worked_solution": task.worked_solution}
 
 
 def finish_item(item_id: str, item: dict) -> dict:

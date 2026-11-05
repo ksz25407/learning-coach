@@ -1,0 +1,42 @@
+{
+  "id": "circuits_diode_clamper",
+  "subject": "circuits",
+  "milestone": {"title": "Diode clampers", "objective": "Sketch the output of a diode clamper and give its minimum and maximum voltage for a sine input, in under 10 minutes", "est_hours": 2},
+  "sources": [
+    {"kind": "pdf", "ref": "fixture-course-notes.pdf p.31", "title": "Course notes p.31 (fixture)",
+     "text": "Clamper circuits. A clamper shifts a waveform up or down without changing its shape. It uses a series capacitor, a diode and usually a load resistor across the output. In a positive clamper the diode's cathode is connected to the output and its anode to ground. On the negative half-cycle of the input the diode conducts and charges the capacitor to about Vp - 0.7 V, where Vp is the input's peak voltage and 0.7 V is the silicon diode drop used in this course. After that the diode stays off and the output is the input shifted up by Vp - 0.7 V: it swings from about -0.7 V to 2Vp - 0.7 V. Example: a 5 V peak sine gives an output from -0.7 V to 9.3 V. Reversing the diode gives a negative clamper, which shifts the waveform down. For the capacitor to hold its charge, the time constant RC must be much longer than the period of the input, at least 10 times."}
+  ],
+  "lesson_lines": [
+    "## How a positive clamper works",
+    "[Source: pdf]",
+    "A clamper shifts the waveform without changing its shape. In a **positive clamper** the diode's cathode is on the output and its anode on ground:",
+    "",
+    "```spice",
+    "V1 in 0 SIN(0 5 1k)",
+    "C1 in out 1u",
+    "D1 0 out DMOD",
+    "R1 out 0 100k",
+    ".model DMOD D(IS=1e-14)",
+    "```",
+    "",
+    "On the negative half-cycle the diode conducts and charges $C_1$ to about $V_p - 0.7$ V. After that the diode stays off, so the output is the input shifted up by $V_p - 0.7$ V.",
+    "",
+    "## Output limits",
+    "[Source: pdf]",
+    "The output swings from about $-0.7$ V to $2V_p - 0.7$ V. For the 5 V peak input above, the output goes from −0.7 V to 10.7 V.",
+    "",
+    "## Choosing R and C",
+    "[Source: pdf]",
+    "The RC time constant should be much shorter than the period of the input, so the capacitor can recharge every cycle. Here $RC = 100\\,\\text{k}\\Omega \\times 1\\,\\mu\\text{F} = 0.1$ s.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Reverse D1 in the netlist. Sketch the new output for the same input and give its minimum and maximum voltage."
+  ],
+  "planted_errors": [
+    {"quote": "the output goes from −0.7 V to 10.7 V", "correct": "the output goes from −0.7 V to 9.3 V", "kind": "wrong_value",
+     "why": "2Vp − 0.7 = 2 × 5 − 0.7 = 9.3 V; the course notes give the same example."},
+    {"quote": "The RC time constant should be much shorter than the period of the input", "correct": "The RC time constant must be much longer than the period (at least 10 times)", "kind": "subtle_claim",
+     "why": "The capacitor must hold its charge between cycles, so RC must be much LONGER than the period (source)."}
+  ]
+}

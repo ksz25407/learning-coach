@@ -36,7 +36,8 @@ def item(kind, **kw):
 
 
 def solved_draft(vth="9", rth="6", instructions=INSTRUCTIONS, methods=2):
-    return Task(instructions=instructions, screenshots=["photo of your handwritten working (all pages)"],
+    return Task(instructions=instructions, worked_solution="Divider: 12 x 12/16 = 9 V; 3k + 4k||12k = 6k.",
+                screenshots=["photo of your handwritten working (all pages)"],
                 rubric=[item("value", quantity="V_th", value=vth, unit="V", tolerance_pct=2),
                         item("value", quantity="$R_{th}$", value=rth, unit="kΩ", tolerance_pct=0)]
                        + [item("method", criterion=f"Correctly establishes step {i}", evidence=f"step {i} in the working")
@@ -71,7 +72,7 @@ def test_good_rubric_has_no_problems():
 
 
 @pytest.mark.parametrize("draft,expect", [
-    (Task(instructions=INSTRUCTIONS, screenshots=[], rubric=[item("method", criterion="a")] * 3),
+    (Task(instructions=INSTRUCTIONS, worked_solution="", screenshots=[], rubric=[item("method", criterion="a")] * 3),
      "needs 1-2 items of kind 'value'"),
     (solved_draft(methods=1), "needs 2-4 items of kind 'method'"),
     (solved_draft(vth="about nine"), "is not a number"),
@@ -276,3 +277,22 @@ def test_ui_verified_key_has_no_warning(tmp_path, monkeypatch):
     assert not at.exception
     page = " ".join(c.value for c in at.caption)
     assert "couldn't confirm" not in page
+
+
+# ---------- found in the Phase 5 live run ----------
+
+def test_working_comes_before_the_numbers():
+    # The reply is written in schema order. With values first, the live run's solver wrote
+    # numbers its own working contradicted, so a correct key was marked "unverified".
+    solver_fields = list(Solution.model_fields)
+    assert solver_fields.index("working") < solver_fields.index("values")
+    task_fields = list(Task.model_fields)
+    assert task_fields.index("worked_solution") < task_fields.index("rubric")
+    assert "values (LAST)" in task_solver.SYSTEM and "working (FIRST)" in task_solver.SYSTEM
+
+
+def test_examiner_working_is_kept_for_after_you_pass(coach, fake, conn, mid):
+    queue_lesson(fake)
+    coach.request_lesson(mid)
+    attempt = store.get_task(conn, mid)["key_check"]["attempts"][0]
+    assert attempt["examiner_working"].startswith("Divider")

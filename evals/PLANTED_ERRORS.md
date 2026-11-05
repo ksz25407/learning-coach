@@ -5,12 +5,26 @@ edit the JSON files, then regenerate.
 
 ## Tuning set (evals/fixtures/)
 
+### circuits_diode_clamper (circuits): Sketch the output of a diode clamper and give its minimum and maximum voltage for a sine input, in under 10 minutes
+
+| Kind | Planted text | Correct version | Why |
+|---|---|---|---|
+| wrong_value | the output goes from −0.7 V to 10.7 V | the output goes from −0.7 V to 9.3 V | 2Vp − 0.7 = 2 × 5 − 0.7 = 9.3 V; the course notes give the same example. |
+| subtle_claim | The RC time constant should be much shorter than the period of the input | The RC time constant must be much longer than the period (at least 10 times) | The capacitor must hold its charge between cycles, so RC must be much LONGER than the period (source). |
+
 ### circuits_kirchhoff_nodal (circuits): Solve a circuit with two non-reference nodes using nodal analysis in under 10 minutes
 
 | Kind | Planted text | Correct version | Why |
 |---|---|---|---|
 | wrong_name | Kirchhoff's Voltage Law (KVL): the currents entering a node add up to the currents leaving it. | Kirchhoff's Current Law (KCL): the currents entering a node add up to the currents leaving it. | The node-current law is KCL, not KVL (source). |
 | step_order | Write a KCL equation at each non-reference node, writing each current with Ohm's law (also counts: 2. Choose a reference node (ground): usually the node with the most connections. / 3. Label the voltage of every other node (V1, V2, …) relative to ground.) | Choose the reference node and label node voltages FIRST; writing the KCL equations is step 3. | The source order is: reference node, label voltages, write KCL, solve. You can't write the equations before labelling. |
+
+### circuits_mosfet_regions (circuits): Decide the operating region of an NMOS in a biased circuit and compute I_D and V_DS, in under 10 minutes
+
+| Kind | Planted text | Correct version | Why |
+|---|---|---|---|
+| subtle_claim | Saturation needs $V_{DS} < V_{GS} - V_t$ | Saturation needs $V_{DS} \ge V_{GS} - V_t$ | Saturation is V_DS >= V_GS - V_t; V_DS < V_GS - V_t is the triode condition (source). |
+| wrong_value | $I_D$ = ½ × 2 × 1² = 2 mA | $I_D$ = ½ × 2 × 1² = 1 mA | 0.5 × 2 mA/V² × (1 V)² = 1 mA; the course notes give the same example. |
 
 ### circuits_ohm_power (circuits): Compute voltage, current, resistance and power for a single resistor, with units, in under 2 minutes per problem
 

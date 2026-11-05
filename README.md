@@ -5,6 +5,9 @@ Phase 1: Scoper → Planner → Teacher, a simple Coach, Streamlit UI, SQLite an
 Phase 2: Curator with web search, PDF uploads, and a Teacher that cites its sources.
 Phase 3: Fact-checker, Pedagogy reviewer, a minimal Examiner and a blind Quiz solver.
 Phase 4: Examiner gate (quiz + practical task), progress tracking and spaced review (py-fsrs).
+Phase 5: a second subject (circuit analysis) to prove it's generic: LaTeX equations, SPICE
+netlists, course-PDF pages sent as images, verified answer keys, and grading photos of
+handwritten working.
 
 ## Setup (Windows, PowerShell)
 
@@ -38,7 +41,7 @@ Tests use a fake API client, so they cost nothing.
 ### Fact-checker eval (real API, costs money)
 
 ```powershell
-python evals/fact_check_eval.py --model opus     # 10 tuning lessons with planted errors
+python evals/fact_check_eval.py --model opus     # 12 tuning lessons with planted errors
 python evals/fact_check_eval.py --model sonnet   # compare models
 python evals/fact_check_eval.py --holdout        # 3 held-out lessons: only after tuning
 python evals/fact_check_eval.py --list-errors    # rewrite evals/PLANTED_ERRORS.md (free)
@@ -62,7 +65,8 @@ It won't start if this month's eval spend plus the run's worst case would pass
 
 - **PDFs** (sidebar → *PDF sources*): text is extracted on upload. Each lesson uses the pages
   that best match the objective (at most `PDF_MAX_PAGES`, default 15). Optionally give a page
-  range to limit the search. Scanned PDFs (no text layer) can't be used; the upload warns you.
+  range to limit the search. Pages with equations, figures or no text are sent as images
+  (Phase 5, below).
 - **Web**: the Curator (Haiku + web search) picks 1–2 primary resources and up to 2 backups.
   Videos are shown under *Recommended resources* but not taught from. The app downloads
   pages itself (15 s timeout, max 5 MB, text capped at 8K tokens) and caches them for 30 days.
@@ -129,6 +133,44 @@ It won't start if this month's eval spend plus the run's worst case would pass
   was passed, quiz tries and best score, task result, overrides, and time you logged with
   **Log time** (shown only; not used for the on-track check). *Attempt history* lists every try.
 - Times are stored in UTC. "Today" uses your time zone (`TIMEZONE`, default America/New_York).
+
+## Second subject: circuit analysis (Phase 5)
+
+Nothing is hard-coded per subject; these features turn on when a subject needs them.
+
+- **Equations** are written in LaTeX (`$V_{GS}$`, `$$...$$`) and rendered in lessons, quizzes,
+  tasks, grades and chat. Dollar amounts are escaped, so cost labels stay plain text.
+- **Circuits** are SPICE netlists in `spice` code blocks (you can paste them into a simulator).
+  Python checks every netlist before you see it (`netlist.py`): element syntax, values (it
+  catches `1M`, which SPICE reads as 1 *milli*), dependent sources, `.model` lines, ground.
+  A broken netlist sends a lesson back to the Teacher, drops a quiz question, or redrafts a task.
+- **Course PDFs**: on upload each page is sorted into text / equations / figure / scanned. Non-text
+  pages are sent to Claude as page images (Claude reads the page's text and a picture of it),
+  uploaded once with the Files API, at most `VISUAL_PDF_MAX_PAGES` (8) per lesson, about
+  4,500 tokens each. Pages are still chosen by their text; a scanned page scores like the
+  pages around it. Source documents are cached, so rewrites and re-checks reuse them cheaply.
+  PDFs uploaded before Phase 5 are text only (re-upload to get images). Removing a PDF or a
+  subject deletes its pages from the Files API too.
+- **Solved-problem tasks** (proof of skill *solved_problem*): drafted by Sonnet from the lesson
+  and its sources, so your course's conventions are used. The rubric has 1-2 *final value*
+  items (the value is hidden from you until you pass) and 2-4 *method* items that accept any
+  valid approach. A blind **Task solver** (Sonnet) works the problem without the rubric; if its
+  values don't match the key, the Examiner redrafts (max `TASK_MAX_REDRAFTS`, 2). The task shows
+  **Answer key verified** or **unverified**.
+- **Handwritten working**: upload photos (JPG, PNG or iPhone HEIC; they're turned upright
+  automatically), one per page. The Grader reads your working and quotes the lines it judged;
+  illegible parts become *can't tell* with the part to re-photograph. The Grader only *reads*
+  your final value; Python checks it against the key with the tolerance, like a quiz answer.
+- **Quiz units** include compound units (`µA/V²`, `V/V`, `1/s`), and a bare `m` means milli
+  unless metres are expected.
+- **Test on a scratch database**: set `COACH_DB_PATH` to use another database file, so your
+  real subjects and spend are untouched:
+
+  ```powershell
+  $env:COACH_DB_PATH = "C:\temp\coach-test.sqlite"
+  streamlit run ui/app.py
+  Remove-Item Env:COACH_DB_PATH     # back to db/coach.sqlite
+  ```
 
 ## Settings
 

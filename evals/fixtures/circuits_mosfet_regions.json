@@ -1,0 +1,48 @@
+{
+  "id": "circuits_mosfet_regions",
+  "subject": "circuits",
+  "milestone": {"title": "MOSFET operating regions", "objective": "Decide the operating region of an NMOS in a biased circuit and compute I_D and V_DS, in under 10 minutes", "est_hours": 3},
+  "sources": [
+    {"kind": "pdf", "ref": "fixture-course-notes.pdf p.58", "title": "Course notes p.58 (fixture)",
+     "text": "n-channel enhancement MOSFET, threshold voltage Vt. Cutoff: VGS < Vt, and ID = 0. Triode: VGS > Vt and VDS < VGS - Vt. Saturation: VGS > Vt and VDS >= VGS - Vt; in saturation ID = (1/2) kn (VGS - Vt)^2, where kn = un Cox W/L. The overdrive voltage is VOV = VGS - Vt. Method: assume saturation, compute ID, then VDS, then check VDS >= VOV; if the check fails, redo the analysis in triode. Example: kn = 2 mA/V^2, Vt = 1 V, VGS = 2 V gives VOV = 1 V and ID = 0.5 x 2 x 1^2 = 1 mA. With RD = 2 kilohm and VDD = 5 V, VDS = 5 - 1 x 2 = 3 V, which is at least VOV = 1 V, so the transistor is in saturation as assumed."}
+  ],
+  "lesson_lines": [
+    "## The three regions",
+    "[Source: pdf]",
+    "For an NMOS with threshold $V_t$:",
+    "",
+    "- **Cutoff:** $V_{GS} < V_t$, so $I_D = 0$.",
+    "- **Triode:** $V_{GS} > V_t$ and $V_{DS} < V_{GS} - V_t$.",
+    "- **Saturation:** $V_{GS} > V_t$. Saturation needs $V_{DS} < V_{GS} - V_t$.",
+    "",
+    "In saturation:",
+    "",
+    "$$",
+    "I_D = \\frac{1}{2} k_n (V_{GS} - V_t)^2, \\quad k_n = \\mu_n C_{ox} \\frac{W}{L}",
+    "$$",
+    "",
+    "## Worked example",
+    "[Source: pdf]",
+    "```spice",
+    "VDD dd 0 DC 5",
+    "VG g 0 DC 2",
+    "RD dd d 2k",
+    "M1 d g 0 0 NMOD",
+    ".model NMOD NMOS(VTO=1 KP=2m)",
+    "```",
+    "",
+    "With $k_n = 2$ mA/V², $V_t = 1$ V and $V_{GS} = 2$ V: assume saturation, so $I_D$ = ½ × 2 × 1² = 2 mA.",
+    "",
+    "Then $V_{DS} = V_{DD} - I_D R_D$, and checking $V_{DS} \\ge V_{OV}$ confirms the assumption.",
+    "",
+    "## Practice",
+    "[Source: model]",
+    "Change RD to 5k in the netlist. Find $I_D$ and $V_{DS}$ and decide the region."
+  ],
+  "planted_errors": [
+    {"quote": "Saturation needs $V_{DS} < V_{GS} - V_t$", "correct": "Saturation needs $V_{DS} \\ge V_{GS} - V_t$", "kind": "subtle_claim",
+     "why": "Saturation is V_DS >= V_GS - V_t; V_DS < V_GS - V_t is the triode condition (source)."},
+    {"quote": "$I_D$ = ½ × 2 × 1² = 2 mA", "correct": "$I_D$ = ½ × 2 × 1² = 1 mA", "kind": "wrong_value",
+     "why": "0.5 × 2 mA/V² × (1 V)² = 1 mA; the course notes give the same example."}
+  ]
+}

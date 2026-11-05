@@ -463,7 +463,7 @@ class Coach:
                                        problems=problems, chunks=chunks)
             netlist_problems = [b["problem"] for b in checks.block_problems(task["instructions"])]
             problems = netlist_problems + (examiner.rubric_problems(task) if solved else [])
-            log = {"attempt": attempt, "problems": problems}
+            log = {"attempt": attempt, "problems": problems, "examiner_working": task.get("worked_solution", "")}
             if solved and not problems:
                 solution = task_solver.solve(self.llm, profile, milestone, task, plain, chunks, profile_id=pid)
                 comparison = checks.compare_key(task["rubric"], solution)

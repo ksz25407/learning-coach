@@ -1,8 +1,11 @@
 """All settings in one place. Change models, prices and limits here."""
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "db" / "coach.sqlite"
+# Phase 5: set COACH_DB_PATH to use another database (e.g. a scratch copy for test runs), so
+# your real subjects, lessons and spend are untouched:  $env:COACH_DB_PATH = "C:\temp\test.sqlite"
+DB_PATH = Path(os.environ.get("COACH_DB_PATH") or ROOT / "db" / "coach.sqlite")
 
 # Which model each agent uses (IDs checked against the Claude API docs, 2026-11).
 SONNET = "claude-sonnet-5-5"
