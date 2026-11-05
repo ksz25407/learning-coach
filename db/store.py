@@ -159,6 +159,20 @@ def delete_profile(conn, profile_id: int):
         conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
 
 
+def empty_profile_ids(conn) -> list[int]:
+    """Subjects you never used: no answer from you, no profile, no plan, no PDFs, no review cards.
+    Before the fix, every click on '+ New subject' left one of these behind."""
+    rows = conn.execute("""
+        SELECT id FROM profiles p
+        WHERE p.profile_json IS NULL
+          AND NOT EXISTS (SELECT 1 FROM chat_messages c WHERE c.profile_id = p.id AND c.role = 'user')
+          AND NOT EXISTS (SELECT 1 FROM milestones m WHERE m.profile_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM pdf_uploads u WHERE u.profile_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM review_schedule r WHERE r.profile_id = p.id)
+        ORDER BY id""").fetchall()
+    return [r["id"] for r in rows]
+
+
 def set_stage(conn, profile_id: int, stage: str):
     conn.execute("UPDATE profiles SET stage = ? WHERE id = ?", (stage, profile_id))
     conn.commit()

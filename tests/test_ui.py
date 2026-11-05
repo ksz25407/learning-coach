@@ -17,9 +17,13 @@ def test_app_loads_and_starts_subject(tmp_path, monkeypatch):
 
 
 def test_delete_needs_confirmation(tmp_path, monkeypatch):
+    from db import store
+
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "ui.sqlite")
+    conn = store.connect(config.DB_PATH)
+    store.create_profile(conn)  # a saved subject ("+ New subject" alone saves nothing)
+    conn.close()
     at = AppTest.from_file(str(config.ROOT / "ui" / "app.py"), default_timeout=30).run()
-    at.button[0].click().run()  # create a subject
 
     at.button(key="delete").click().run()  # first click: only asks
     assert not at.exception

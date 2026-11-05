@@ -16,7 +16,7 @@ from agents.curator import is_long
 from agents.scoper import SubjectProfile
 from db import store
 from llm import LLM, BudgetExceeded, LLMError, RefusalError
-from orchestrator import Coach, PlanningFailed
+from orchestrator import GREETING, Coach, PlanningFailed
 
 st.set_page_config(page_title="Learning Coach", layout="wide")
 
@@ -392,19 +392,32 @@ with st.sidebar:
 
     profiles = store.list_profiles(conn)
     labels = {p["id"]: p["subject"] or f"New subject #{p['id']}" for p in profiles}
+    # "+ New subject" only starts a draft in this browser session. Nothing is saved until you
+    # answer the greeting (see coach.start_subject), so leaving leaves no empty subject behind.
     if st.button("+ New subject", width="stretch"):
-        st.session_state.profile_id = coach.new_subject()
-        st.session_state.open_milestone = None
+        st.session_state.drafting = True
+        for k in ("profile_id", "open_milestone", "confirm_delete"):
+            st.session_state.pop(k, None)
         st.rerun()
+    drafting = st.session_state.get("drafting", False)
+    pid = None
     if profiles:
         ids = list(labels)
-        current = st.session_state.get("profile_id", ids[-1])
-        pid = st.selectbox("Subject", ids, index=ids.index(current) if current in ids else len(ids) - 1,
-                           format_func=lambda i: labels[i])
-        if pid != st.session_state.get("profile_id"):
+        if drafting:  # no subject selected; picking one ends the draft
+            pid = st.selectbox("Subject", ids, index=None, placeholder="Pick a saved subject",
+                               format_func=lambda i: labels[i])
+            if pid is not None:
+                st.session_state.drafting = drafting = False
+        else:
+            current = st.session_state.get("profile_id", ids[-1])
+            pid = st.selectbox("Subject", ids, index=ids.index(current) if current in ids else len(ids) - 1,
+                               format_func=lambda i: labels[i])
+        if pid is not None and pid != st.session_state.get("profile_id"):
             st.session_state.open_milestone = None
             st.session_state.confirm_delete = None
-        st.session_state.profile_id = pid
+            st.session_state.profile_id = pid
+
+    if pid is not None:
 
         # Delete needs two clicks: "Delete subject", then "Yes, delete".
         if st.session_state.get("confirm_delete") != pid:
@@ -472,6 +485,20 @@ with st.sidebar:
 # ---------------- main ----------------
 if st.session_state.get("error"):
     st.error(st.session_state.pop("error"))
+
+if st.session_state.get("drafting"):
+    st.subheader("Let's scope your subject")
+    with st.chat_message("assistant"):
+        st.markdown(GREETING)
+    if text := st.chat_input("Your answer"):
+        # Only now is the subject saved. Switch to it BEFORE calling the Scoper: your answer is
+        # stored first, so if the call fails you stay on this subject instead of making a new one.
+        st.session_state.profile_id = coach.new_subject()
+        st.session_state.drafting = False
+        with st.spinner("Thinking..."):
+            run_safely(coach.handle_message, st.session_state.profile_id, text)
+        st.rerun()
+    st.stop()
 
 pid = st.session_state.get("profile_id")
 if pid is None:
